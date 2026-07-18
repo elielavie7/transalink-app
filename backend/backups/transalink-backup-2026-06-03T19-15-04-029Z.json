@@ -1,0 +1,37 @@
+{
+  "app": "TransaLink",
+  "created_at": "2026-06-03T19:15:04.007Z",
+  "created_by": {
+    "id": 3,
+    "role": "agent"
+  },
+  "tables": {
+    "users": [
+      {
+        "id": 3,
+        "name": "LAVIE",
+        "role": "agent",
+        "password": "$2b$10$AtnbIEYwW90z7yU2TejdaOeowwkb/I4Z0pQb6zon22kOlNLOwscuu",
+        "pin": "1234",
+        "created_at": "2026-05-01T04:41:07.173Z",
+        "transaction_pin": "$2b$10$2.RspUwoahKrS6y0Hbxqmu0L2QKmJIR.Ts29sJ2z9meVZRE9tvhmu"
+      },
+      {
+        "id": 4,
+        "name": "Terrain",
+        "role": "terrain",
+        "password": "$2b$10$CtDiUlSweM8FHIZMtfmoTexmrtTzurl6eR4J.l6oJwBo5Aw2ENfTu",
+        "pin": "4321",
+        "created_at": "2026-05-01T04:44:44.344Z",
+        "transaction_pin": "$2b$10$C6lzlR/QMZZJyYezx9c/b.OAumco0gPny.E2BvUcFZaBlECrRIWRu"
+      }
+    ],
+    "transactions": [],
+    "return_codes": [],
+    "incomes": [],
+    "expenses": [],
+    "field_reports": [],
+    "notifications": [],
+    "audit_logs": []
+  }
+}

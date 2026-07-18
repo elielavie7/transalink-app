@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <script src="../js/auth-guard.js"></script>
+
+    <title>Entrées - Terrain</title>
+
+    <script>
+      (function () {
+        const theme = localStorage.getItem("transalink_theme");
+        const fontScale =
+          localStorage.getItem("transalink_font_scale") || "100";
+
+        document.documentElement.style.fontSize = fontScale + "%";
+
+        if (theme === "dark") {
+          document.documentElement.classList.add("dark-mode-preload");
+        }
+      })();
+    </script>
+
+    <link rel="stylesheet" href="../css/style.css" />
+  </head>
+
+  <body class="app-body">
+    <main class="mobile-app transaction-app">
+      <header class="app-header">
+        <button class="icon-btn" onclick="goBack()">←</button>
+
+        <div>
+          <h1>Entrées</h1>
+          <p>Historique des capitaux ajoutés</p>
+        </div>
+
+        <button class="icon-btn" onclick="loadIncomes()">⟳</button>
+      </header>
+
+      <section class="requests-page">
+        <div class="filter-bar">
+          <input
+            type="text"
+            id="searchInput"
+            placeholder="Rechercher..."
+            oninput="renderList()"
+          />
+
+         <select id="periodFilter" onchange="changePeriod()">
+            <option value="today">Aujourd'hui</option>
+            <option value="week">Cette semaine</option>
+            <option value="month" selected>Ce mois</option>
+            <option value="all">Tout</option>
+          </select>
+
+          <button class="calendar-filter-btn" onclick="openDateModal()">
+            📅
+
+            <span id="selectedDateLabel"> Date </span>
+          </button>
+        </div>
+
+        <div class="terrain-history-summary" id="summaryBox">Entrées</div>
+
+        <div class="terrain-history-grid" id="incomeList"></div>
+      </section>
+    </main>
+
+    <script src="../js/config.js"></script>
+    <script src="../js/app-settings.js"></script>
+    <script src="../js/app-nav.js"></script>
+    <script src="../js/terrain-incomes.js"></script>
+  </body>
+</html>

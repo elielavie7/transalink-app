@@ -1,0 +1,751 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Codes à libérer - TransaLink</title>
+    <script src="../js/auth-guard.js"></script>
+
+    <script>
+      (function () {
+        const theme = localStorage.getItem("transalink_theme");
+        const fontScale =
+          localStorage.getItem("transalink_font_scale") || "100";
+
+        document.documentElement.style.fontSize = fontScale + "%";
+
+        if (theme === "dark") {
+          document.documentElement.classList.add("dark-mode-preload");
+        }
+      })();
+    </script>
+    <link rel="stylesheet" href="../css/style.css" />
+  </head>
+
+  <body class="app-body">
+    <main class="mobile-app transaction-app">
+      <header class="app-header">
+        <button class="icon-btn" onclick="goBack()">←</button>
+        <div>
+          <h1>Codes à libérer</h1>
+          <p>Confirmer les libérations terrain</p>
+        </div>
+        <button class="icon-btn" onclick="loadReturnCodes()">⟳</button>
+      </header>
+
+      <section class="requests-page">
+        <div class="filter-bar">
+          <input
+            type="text"
+            id="searchInput"
+            placeholder="Rechercher montant, numéro ou note..."
+            oninput="applyFilters()"
+          />
+
+          <select id="statusFilter" onchange="applyFilters()">
+            <option value="all">Tous statuts</option>
+            <option value="pending">En attente</option>
+            <option value="released">Libérés</option>
+            <option value="cancelled">Annulés</option>
+          </select>
+
+          <select id="periodFilter" onchange="applyFilters()">
+            <option value="today">Aujourd’hui</option>
+            <option value="week">Cette semaine</option>
+            <option value="month">Ce mois</option>
+            <option value="all">Tout</option>
+          </select>
+          <button
+            type="button"
+            class="calendar-filter-btn"
+            onclick="openDateModal()"
+          >
+            📅
+            <span id="selectedDateLabel">Date</span>
+          </button>
+        </div>
+
+        <div class="mini-summary" id="miniSummary"></div>
+
+        <div id="codesList" class="requests-list">
+          <p class="empty-text">Chargement...</p>
+        </div>
+
+        <div class="pagination-box" id="paginationBox"></div>
+      </section>
+    </main>
+    <script src="../js/config.js"></script>
+
+    <script src="../js/app-settings.js"></script>
+    <script src="../js/app-nav.js"></script>
+    <script>
+      const token = localStorage.getItem("transalink_token");
+      const user = JSON.parse(localStorage.getItem("transalink_user"));
+
+      if (!token || !user || user.role !== "terrain") {
+        window.location.href = "../index.html";
+      }
+
+      const headers = {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      };
+
+      const codesList = document.getElementById("codesList");
+      const miniSummary = document.getElementById("miniSummary");
+      const paginationBox = document.getElementById("paginationBox");
+
+      let allCodes = [];
+      let filteredCodes = [];
+      let currentPage = 1;
+      const itemsPerPage = 10;
+
+      let selectedCodeId = null;
+      let mediaRecorder = null;
+      let audioChunks = [];
+      let terrainAudioBlob = null;
+      let audioStream = null;
+
+      function formatMoney(amount) {
+        return Number(amount || 0).toLocaleString("fr-FR") + " FC";
+      }
+      function showAppModal(type, title, message) {
+        const oldModal = document.getElementById("appModal");
+        if (oldModal) oldModal.remove();
+
+        const isSuccess = type === "success";
+
+        document.body.insertAdjacentHTML(
+          "beforeend",
+          `
+    <div class="custom-modal" id="appModal" onclick="closeAppModal()">
+      <div class="modal-box" onclick="event.stopPropagation()">
+        <h2>${isSuccess ? "✅" : "⚠️"} ${title}</h2>
+        <p>${message}</p>
+
+        <div class="modal-actions">
+          <button class="small-btn ${isSuccess ? "success-btn" : "danger-btn"}"
+                  onclick="closeAppModal()">
+            OK
+          </button>
+        </div>
+      </div>
+    </div>
+  `,
+        );
+      }
+
+      function closeAppModal() {
+        const modal = document.getElementById("appModal");
+        if (modal) modal.remove();
+      }
+
+      function formatDate(date) {
+        if (!date) return "-";
+        return new Date(date).toLocaleString("fr-FR", {
+          weekday: "short",
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+      }
+
+      function statusLabel(status) {
+        const labels = {
+          pending: "En attente",
+          released: "Libéré",
+          cancelled: "Annulé",
+          received: "Reçu",
+        };
+        return labels[status] || status;
+      }
+
+      function normalizeStatus(status) {
+        if (status === "received") return "pending";
+        return status;
+      }
+
+      function isSameDay(date1, date2) {
+        return (
+          date1.getFullYear() === date2.getFullYear() &&
+          date1.getMonth() === date2.getMonth() &&
+          date1.getDate() === date2.getDate()
+        );
+      }
+
+      function isSameWeek(date) {
+        const today = new Date();
+        const currentDay = today.getDay() || 7;
+
+        const monday = new Date(today);
+        monday.setDate(today.getDate() - currentDay + 1);
+        monday.setHours(0, 0, 0, 0);
+
+        const sunday = new Date(monday);
+        sunday.setDate(monday.getDate() + 6);
+        sunday.setHours(23, 59, 59, 999);
+
+        return date >= monday && date <= sunday;
+      }
+
+      function isSameMonth(date) {
+        const today = new Date();
+        return (
+          date.getFullYear() === today.getFullYear() &&
+          date.getMonth() === today.getMonth()
+        );
+      }
+      let selectedDateFilter = "";
+
+      function openDateModal() {
+        const oldModal = document.getElementById("dateModal");
+        if (oldModal) oldModal.remove();
+
+        document.body.insertAdjacentHTML(
+          "beforeend",
+          `
+        <div class="custom-modal" id="dateModal" onclick="closeDateModal()">
+            <div class="modal-box" onclick="event.stopPropagation()">
+                <h2>📅 Filtrer par date</h2>
+                <p>Choisis une date précise pour afficher seulement les codes de ce jour.</p>
+
+                <label>Date voulue</label>
+                <input type="date" id="singleDateInput" value="${selectedDateFilter}" />
+
+                <div class="modal-actions">
+                    <button class="small-btn danger-btn" onclick="clearDateFilter()">Effacer</button>
+                    <button class="small-btn success-btn" onclick="applySingleDateFilter()">Appliquer</button>
+                </div>
+            </div>
+        </div>
+    `,
+        );
+      }
+
+      function closeDateModal() {
+        const modal = document.getElementById("dateModal");
+        if (modal) modal.remove();
+      }
+
+      function applySingleDateFilter() {
+        selectedDateFilter = document.getElementById("singleDateInput").value;
+
+        document.getElementById("selectedDateLabel").textContent =
+          selectedDateFilter
+            ? new Date(selectedDateFilter).toLocaleDateString("fr-FR")
+            : "Date";
+
+        closeDateModal();
+        applyFilters();
+      }
+
+      function clearDateFilter() {
+        selectedDateFilter = "";
+        document.getElementById("selectedDateLabel").textContent = "Date";
+        closeDateModal();
+        applyFilters();
+      }
+
+      function isSelectedDate(date) {
+        if (!selectedDateFilter) return true;
+
+        const selected = new Date(selectedDateFilter);
+        const target = new Date(date);
+
+        return (
+          selected.getFullYear() === target.getFullYear() &&
+          selected.getMonth() === target.getMonth() &&
+          selected.getDate() === target.getDate()
+        );
+      }
+
+      function getPeriodTitle(period) {
+        const titles = {
+          today: "Codes à libérer aujourd’hui",
+          week: "Codes à libérer cette semaine",
+          month: "Codes à libérer ce mois",
+          all: "Tous les codes à libérer",
+        };
+        return titles[period] || "Codes à libérer";
+      }
+
+      async function markReturnNotificationsRead() {
+        const agencyId = localStorage.getItem("selected_agency_id");
+
+        if (!agencyId) return;
+
+        try {
+          await fetch(`${API_URL}/notifications/read-types`, {
+            method: "PUT",
+            headers: {
+              ...headers,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              agency_id: agencyId,
+              types: ["return_code_created", "return_code_cancelled"],
+            }),
+          });
+        } catch (error) {
+          console.error(error);
+        }
+      }
+
+      async function loadReturnCodes() {
+        codesList.innerHTML = `<p class="empty-text">Chargement...</p>`;
+        miniSummary.innerHTML = "";
+        paginationBox.innerHTML = "";
+
+        try {
+          const res = await fetch(
+            `${API_URL}/return-codes?agency_id=${localStorage.getItem("selected_agency_id")}`,
+            { headers },
+          );
+          const data = await res.json();
+
+          if (!data.success) {
+            codesList.innerHTML = `<p class="error">${data.message || "Erreur récupération"}</p>`;
+            return;
+          }
+
+          allCodes = (data.data || [])
+            .map((c) => ({ ...c, status: normalizeStatus(c.status) }))
+            .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+          applyFilters();
+          await markReturnNotificationsRead();
+        } catch (error) {
+          codesList.innerHTML = `<p class="error">Serveur indisponible</p>`;
+        }
+      }
+
+      function applyFilters() {
+        const search = document
+          .getElementById("searchInput")
+          .value.toLowerCase()
+          .trim();
+        const status = document.getElementById("statusFilter").value;
+        const period = document.getElementById("periodFilter").value;
+        const today = new Date();
+
+        filteredCodes = allCodes.filter((c) => {
+          const createdAt = new Date(c.created_at);
+
+          const matchStatus = status === "all" || c.status === status;
+
+          const matchSearch =
+            !search ||
+            String(c.amount || "")
+              .toLowerCase()
+              .includes(search) ||
+            String(c.income_amount || "")
+              .toLowerCase()
+              .includes(search) ||
+            String(c.sender_number || "")
+              .toLowerCase()
+              .includes(search) ||
+            String(c.note || "")
+              .toLowerCase()
+              .includes(search);
+
+          let matchPeriod = true;
+
+          if (selectedDateFilter) {
+            matchPeriod = isSelectedDate(createdAt);
+          } else {
+            if (period === "today") matchPeriod = isSameDay(createdAt, today);
+            if (period === "week") matchPeriod = isSameWeek(createdAt);
+            if (period === "month") matchPeriod = isSameMonth(createdAt);
+          }
+
+          return matchStatus && matchSearch && matchPeriod;
+        });
+
+        currentPage = 1;
+        renderCodes();
+      }
+      function renderSummary() {
+        const period = document.getElementById("periodFilter").value;
+
+        const validCodes = filteredCodes.filter(
+          (c) => c.status === "pending" || c.status === "released",
+        );
+
+        const totalToRelease = validCodes.reduce(
+          (sum, c) => sum + Number(c.amount || 0),
+          0,
+        );
+        const totalIncome = validCodes.reduce(
+          (sum, c) => sum + Number(c.income_amount || 0),
+          0,
+        );
+
+        const pendingCount = filteredCodes.filter(
+          (c) => c.status === "pending",
+        ).length;
+        const releasedCount = filteredCodes.filter(
+          (c) => c.status === "released",
+        ).length;
+        const cancelledCount = filteredCodes.filter(
+          (c) => c.status === "cancelled",
+        ).length;
+
+        miniSummary.innerHTML = `
+    <div class="summary-line">
+      <strong>${getPeriodTitle(period)}</strong>
+      <span>
+        ${filteredCodes.length} code(s) •
+        À libérer : ${formatMoney(totalToRelease)} •
+        Entrée caisse : ${formatMoney(totalIncome)} •
+        ${pendingCount} en attente •
+        ${releasedCount} libéré(s) •
+        ${cancelledCount} annulé(s)
+      </span>
+    </div>
+  `;
+      }
+      function renderCodes() {
+        renderSummary();
+
+        if (!filteredCodes || filteredCodes.length === 0) {
+          codesList.innerHTML = `<p class="empty-text">Aucun code retour trouvé pour cette période.</p>`;
+          paginationBox.innerHTML = "";
+          return;
+        }
+
+        const start = (currentPage - 1) * itemsPerPage;
+        const end = start + itemsPerPage;
+        const pageItems = filteredCodes.slice(start, end);
+
+        codesList.innerHTML = pageItems
+          .map(
+            (c) => `
+        <article class="request-card compact-request-card return-code-card">
+          <div class="request-top">
+            <div>
+              <h3>${formatMoney(c.amount)}</h3>
+              <p>Montant à libérer</p>
+            </div>
+            <span class="status-pill ${c.status}">${statusLabel(c.status)}</span>
+          </div>
+
+          <div class="request-info compact-info">
+            ${c.sender_number ? `<p><strong>Numéro :</strong> ${c.sender_number}</p>` : ""}
+            ${c.note ? `<p><strong>Note :</strong> ${c.note}</p>` : ""}
+            <p><strong>Date :</strong> ${formatDate(c.created_at)}</p>
+            ${c.released_at ? `<p><strong>Libéré le :</strong> ${formatDate(c.released_at)}</p>` : ""}
+          </div>
+
+          ${
+            c.audio_url
+              ? `
+            <div class="audio-player-box agent-audio-box">
+              <div>
+                <strong>🎧 Audio code retour</strong>
+                <small>Audio de l’agent</small>
+              </div>
+              <audio controls src="${BASE_URL}${c.audio_url}"></audio>
+            </div>
+          `
+              : ""
+          }
+
+          <div class="request-actions">
+            ${
+              c.status === "pending"
+                ? `
+              <button class="small-btn success-btn" onclick="openReleaseModal(${c.id})">✅ Libérer</button>
+            `
+                : `<span class="final-status">${statusLabel(c.status)}</span>`
+            }
+          </div>
+        </article>
+      `,
+          )
+          .join("");
+
+        renderPagination();
+      }
+
+      function renderPagination() {
+        const totalPages = Math.ceil(filteredCodes.length / itemsPerPage);
+
+        if (totalPages <= 1) {
+          paginationBox.innerHTML = "";
+          return;
+        }
+
+        paginationBox.innerHTML = `
+        <button class="small-btn" onclick="prevPage()" ${currentPage === 1 ? "disabled" : ""}>← Précédent</button>
+        <span>Page ${currentPage} / ${totalPages}</span>
+        <button class="small-btn" onclick="nextPage()" ${currentPage === totalPages ? "disabled" : ""}>Suivant →</button>
+      `;
+      }
+
+      function prevPage() {
+        if (currentPage > 1) {
+          currentPage--;
+          renderCodes();
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }
+      }
+
+      function nextPage() {
+        const totalPages = Math.ceil(filteredCodes.length / itemsPerPage);
+        if (currentPage < totalPages) {
+          currentPage++;
+          renderCodes();
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }
+      }
+
+      function openReleaseModal(id) {
+        selectedCodeId = id;
+        resetTerrainAudio();
+
+        document.body.insertAdjacentHTML(
+          "beforeend",
+          `
+        <div class="custom-modal" id="releaseModal" onclick="closeReleaseModal()">
+          <div class="modal-box" onclick="event.stopPropagation()">
+            <h2>✅ Libérer le code</h2>
+            <p>Enregistre un audio de confirmation avant de valider la libération.</p>
+
+            ${audioRecorderHTML()}
+
+            <div class="modal-actions">
+              <button class="small-btn danger-btn" onclick="closeReleaseModal()">Annuler</button>
+              <button class="small-btn success-btn" onclick="confirmRelease()">Confirmer libéré</button>
+            </div>
+          </div>
+        </div>
+      `,
+        );
+
+        bindTerrainAudioButtons();
+      }
+
+      function closeReleaseModal() {
+        resetTerrainAudio();
+        selectedCodeId = null;
+
+        const modal = document.getElementById("releaseModal");
+        if (modal) modal.remove();
+      }
+
+      function audioRecorderHTML() {
+        return `
+        <div class="audio-card modal-audio-card">
+          <div class="audio-head">
+            <div>
+              <h3>🎙️ Audio confirmation</h3>
+              <p>Dis clairement que l’argent a été libéré.</p>
+            </div>
+            <span id="terrainAudioStatus">Aucun audio</span>
+          </div>
+
+          <div class="voice-wave" id="terrainVoiceWave">
+            <span></span><span></span><span></span><span></span><span></span>
+          </div>
+
+          <div class="audio-actions">
+            <button type="button" class="small-btn primary-small-btn" id="terrainStartRecordBtn">🎙️ Démarrer</button>
+            <button type="button" class="small-btn danger-btn" id="terrainStopRecordBtn" disabled>⏹️ Arrêter</button>
+            <button type="button" class="small-btn danger-btn" id="terrainDeleteAudioBtn" disabled>🗑️ Supprimer</button>
+          </div>
+
+          <audio id="terrainAudioPreview" controls style="display:none;"></audio>
+        </div>
+      `;
+      }
+
+      function bindTerrainAudioButtons() {
+        document
+          .getElementById("terrainStartRecordBtn")
+          .addEventListener("click", startTerrainRecording);
+        document
+          .getElementById("terrainStopRecordBtn")
+          .addEventListener("click", stopTerrainRecording);
+        document
+          .getElementById("terrainDeleteAudioBtn")
+          .addEventListener("click", deleteTerrainAudio);
+      }
+
+      async function startTerrainRecording() {
+        try {
+          audioStream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+          });
+
+          mediaRecorder = new MediaRecorder(audioStream);
+          audioChunks = [];
+
+          mediaRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0) audioChunks.push(event.data);
+          };
+
+          mediaRecorder.onstop = () => {
+            terrainAudioBlob = new Blob(audioChunks, { type: "audio/webm" });
+            const audioUrl = URL.createObjectURL(terrainAudioBlob);
+
+            const preview = document.getElementById("terrainAudioPreview");
+            preview.src = audioUrl;
+            preview.style.display = "block";
+
+            const status = document.getElementById("terrainAudioStatus");
+            status.textContent = "Audio prêt";
+            status.className = "audio-ready";
+
+            document
+              .getElementById("terrainVoiceWave")
+              .classList.remove("show");
+            document.getElementById("terrainStartRecordBtn").disabled = false;
+            document.getElementById("terrainStopRecordBtn").disabled = true;
+            document.getElementById("terrainDeleteAudioBtn").disabled = false;
+
+            if (audioStream) {
+              audioStream.getTracks().forEach((track) => track.stop());
+            }
+          };
+
+          mediaRecorder.start();
+
+          const status = document.getElementById("terrainAudioStatus");
+          status.textContent = "Enregistrement...";
+          status.className = "audio-recording";
+
+          document.getElementById("terrainVoiceWave").classList.add("show");
+          document.getElementById("terrainStartRecordBtn").disabled = true;
+          document.getElementById("terrainStopRecordBtn").disabled = false;
+          document.getElementById("terrainDeleteAudioBtn").disabled = true;
+        } catch (error) {
+          showAppModal(
+            "error",
+            "Micro indisponible",
+            "Micro non autorisé ou indisponible.",
+          );
+        }
+      }
+
+      function stopTerrainRecording() {
+        if (mediaRecorder && mediaRecorder.state === "recording") {
+          mediaRecorder.stop();
+        }
+      }
+
+      function deleteTerrainAudio() {
+        resetTerrainAudio();
+
+        const preview = document.getElementById("terrainAudioPreview");
+        const status = document.getElementById("terrainAudioStatus");
+        const wave = document.getElementById("terrainVoiceWave");
+
+        if (preview) {
+          preview.src = "";
+          preview.style.display = "none";
+        }
+
+        if (status) {
+          status.textContent = "Aucun audio";
+          status.className = "";
+        }
+
+        if (wave) wave.classList.remove("show");
+
+        const deleteBtn = document.getElementById("terrainDeleteAudioBtn");
+        if (deleteBtn) deleteBtn.disabled = true;
+      }
+
+      function resetTerrainAudio() {
+        terrainAudioBlob = null;
+        audioChunks = [];
+
+        if (audioStream) {
+          audioStream.getTracks().forEach((track) => track.stop());
+          audioStream = null;
+        }
+      }
+
+      async function uploadTerrainAudio(codeId) {
+        if (!terrainAudioBlob) return;
+
+        const formData = new FormData();
+        formData.append(
+          "audio",
+          terrainAudioBlob,
+          `return-code-release-${codeId}.webm`,
+        );
+
+        const res = await fetch(`${API_URL}/return-codes/audio/${codeId}`, {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          body: formData,
+        });
+
+        const data = await res.json();
+
+        if (!data.success) {
+          throw new Error(data.message || "Erreur upload audio confirmation");
+        }
+      }
+
+      async function confirmRelease() {
+        if (!selectedCodeId) return;
+
+        if (!terrainAudioBlob) {
+          showAppModal(
+            "error",
+            "Audio obligatoire",
+            "Enregistre une confirmation avant de libérer le code.",
+          );
+          return;
+        }
+
+        try {
+          await uploadTerrainAudio(selectedCodeId);
+
+          const agencyId = localStorage.getItem("selected_agency_id");
+
+          const res = await fetch(
+            `${API_URL}/return-codes/release/${selectedCodeId}?agency_id=${agencyId}`,
+            {
+              method: "PUT",
+              headers,
+              body: JSON.stringify({}),
+            },
+          );
+
+          const data = await res.json();
+
+          if (!data.success) {
+            showAppModal(
+              "error",
+              "Libération impossible",
+              data.message || "Erreur libération",
+            );
+            return;
+          }
+
+          closeReleaseModal();
+          loadReturnCodes();
+        } catch (error) {
+          showAppModal(
+            "error",
+            "Serveur indisponible",
+            error.message || "Impossible de contacter le serveur.",
+          );
+        }
+      }
+
+      function goBack() {
+        window.location.href = "dashboard.html";
+      }
+
+      loadReturnCodes();
+    </script>
+  </body>
+</html>

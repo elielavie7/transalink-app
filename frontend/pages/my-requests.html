@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mes demandes - TransaLink</title>
+  <script src="../js/auth-guard.js"></script>
+
+  <script>
+    (function () {
+      const theme = localStorage.getItem("transalink_theme");
+      const fontScale = localStorage.getItem("transalink_font_scale") || "100";
+
+      document.documentElement.style.fontSize = fontScale + "%";
+
+      if (theme === "dark") {
+        document.documentElement.classList.add("dark-mode-preload");
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="../css/style.css" />
+</head>
+
+<body class="app-body">
+  <main class="mobile-app transaction-app">
+
+    <header class="app-header">
+      <button class="icon-btn" onclick="goBack()">←</button>
+      <div>
+        <h1>Mes demandes</h1>
+        <p>Suivre mes transactions</p>
+      </div>
+      <button class="icon-btn" onclick="loadMyRequests()">⟳</button>
+    </header>
+
+    <section class="requests-page">
+      <div class="filter-bar">
+        <input type="text" id="searchInput" placeholder="Rechercher numéro ou montant..." oninput="applyFilters()" />
+
+        <select id="statusFilter" onchange="applyFilters()">
+          <option value="all">Tous statuts</option>
+          <option value="pending">En attente</option>
+          <option value="approved">Validées</option>
+          <option value="sent">Envoyées</option>
+          <option value="rejected">Refusées</option>
+          <option value="cancelled">Annulées</option>
+        </select>
+
+        <select id="periodFilter" onchange="applyFilters()">
+          <option value="today">Aujourd’hui</option>
+          <option value="week">Cette semaine</option>
+          <option value="month">Ce mois</option>
+          <option value="all">Tout</option>
+        </select>
+
+        <button type="button" class="calendar-filter-btn" onclick="openDateModal()">
+          📅 <span id="selectedDateLabel">Date</span>
+        </button>
+      </div>
+
+      <div class="mini-summary" id="miniSummary"></div>
+
+      <div id="requestsList" class="requests-list">
+        <p class="empty-text">Chargement...</p>
+      </div>
+
+      <div class="pagination-box" id="paginationBox"></div>
+    </section>
+  </main>
+  <script src="../js/config.js"></script>
+
+  <script src="../js/app-settings.js"></script>
+  <script src="../js/app-nav.js"></script>
+  <script>
+
+    const token = localStorage.getItem("transalink_token");
+    const user = JSON.parse(localStorage.getItem("transalink_user"));
+
+    if (!token || !user || user.role !== "terrain") {
+      window.location.href = "../index.html";
+    }
+
+    const headers = {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`
+    };
+
+    const requestsList = document.getElementById("requestsList");
+    const paginationBox = document.getElementById("paginationBox");
+    const miniSummary = document.getElementById("miniSummary");
+
+    let allMyTransactions = [];
+    let filteredTransactions = [];
+    let currentPage = 1;
+    const itemsPerPage = 10;
+    let selectedDateFilter = "";
+
+    function formatMoney(amount) {
+      return Number(amount || 0).toLocaleString("fr-FR") + " FC";
+    }
+
+    function showPopup(type, title, message) {
+      const oldPopup = document.getElementById("appPopup");
+      if (oldPopup) oldPopup.remove();
+
+      const isSuccess = type === "success";
+
+      document.body.insertAdjacentHTML("beforeend", `
+        <div class="custom-modal" id="appPopup" style="z-index:99999;">
+          <div class="modal-box" onclick="event.stopPropagation()">
+            <h2>${isSuccess ? "✅" : "❌"} ${title}</h2>
+            <p>${message}</p>
+
+            <div class="modal-actions">
+              <button type="button" class="small-btn ${isSuccess ? "success-btn" : "danger-btn"}" onclick="closePopup(event)">
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      `);
+    }
+
+    function closePopup(event) {
+      if (event) event.stopPropagation();
+      const popup = document.getElementById("appPopup");
+      if (popup) popup.remove();
+    }
+
+    function formatDate(date) {
+      return new Date(date).toLocaleString("fr-FR", {
+        weekday: "short",
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    }
+
+    function statusLabel(status) {
+      const labels = {
+        pending: "En attente",
+        approved: "Validée",
+        sent: "Envoyée",
+        rejected: "Refusée",
+        cancelled: "Annulée"
+      };
+      return labels[status] || status;
+    }
+
+    function isSameDay(date1, date2) {
+      return date1.getFullYear() === date2.getFullYear() &&
+        date1.getMonth() === date2.getMonth() &&
+        date1.getDate() === date2.getDate();
+    }
+
+    function isSameWeek(date) {
+      const today = new Date();
+      const currentDay = today.getDay() || 7;
+
+      const monday = new Date(today);
+      monday.setDate(today.getDate() - currentDay + 1);
+      monday.setHours(0, 0, 0, 0);
+
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+      sunday.setHours(23, 59, 59, 999);
+
+      return date >= monday && date <= sunday;
+    }
+
+    function isSameMonth(date) {
+      const today = new Date();
+      return date.getFullYear() === today.getFullYear() &&
+        date.getMonth() === today.getMonth();
+    }
+
+    function openDateModal() {
+      const oldModal = document.getElementById("dateModal");
+      if (oldModal) oldModal.remove();
+
+      document.body.insertAdjacentHTML("beforeend", `
+        <div class="custom-modal" id="dateModal" onclick="closeDateModal()">
+          <div class="modal-box" onclick="event.stopPropagation()">
+            <h2>📅 Filtrer par date</h2>
+            <p>Choisis une date précise pour afficher seulement tes demandes de ce jour.</p>
+
+            <label>Date voulue</label>
+            <input type="date" id="singleDateInput" value="${selectedDateFilter}" />
+
+            <div class="modal-actions">
+              <button class="small-btn danger-btn" onclick="clearDateFilter()">Effacer</button>
+              <button class="small-btn success-btn" onclick="applySingleDateFilter()">Appliquer</button>
+            </div>
+          </div>
+        </div>
+      `);
+    }
+
+    function closeDateModal() {
+      const modal = document.getElementById("dateModal");
+      if (modal) modal.remove();
+    }
+
+    function applySingleDateFilter() {
+      selectedDateFilter = document.getElementById("singleDateInput").value;
+
+      document.getElementById("selectedDateLabel").textContent = selectedDateFilter
+        ? new Date(selectedDateFilter).toLocaleDateString("fr-FR")
+        : "Date";
+
+      closeDateModal();
+      applyFilters();
+    }
+
+    function clearDateFilter() {
+      selectedDateFilter = "";
+      document.getElementById("selectedDateLabel").textContent = "Date";
+      closeDateModal();
+      applyFilters();
+    }
+
+    function isSelectedDate(date) {
+      if (!selectedDateFilter) return true;
+
+      const selected = new Date(selectedDateFilter);
+      const target = new Date(date);
+
+      return selected.getFullYear() === target.getFullYear() &&
+        selected.getMonth() === target.getMonth() &&
+        selected.getDate() === target.getDate();
+    }
+
+    function getPeriodTitle(period) {
+      const titles = {
+        today: "Demandes d’aujourd’hui",
+        week: "Demandes de cette semaine",
+        month: "Demandes de ce mois",
+        all: "Toutes mes demandes"
+      };
+
+      return titles[period] || "Mes demandes";
+    }
+
+    async function loadMyRequests() {
+      requestsList.innerHTML = `<p class="empty-text">Chargement...</p>`;
+      paginationBox.innerHTML = "";
+      miniSummary.innerHTML = "";
+        const agencyId = localStorage.getItem("selected_agency_id");
+
+      try {
+
+const url =
+  user.role === "terrain"
+    ? `${API_URL}/transactions?agency_id=${agencyId}`
+    : `${API_URL}/transactions`;
+
+const res = await fetch(url, { headers });
+        const data = await res.json();
+
+        if (!data.success) {
+          requestsList.innerHTML = `<p class="error">${data.message}</p>`;
+          return;
+        }
+
+        allMyTransactions = (data.transactions || [])
+          .filter(t => Number(t.created_by) === Number(user.id))
+          .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+        applyFilters();
+      } catch (error) {
+        requestsList.innerHTML = `<p class="error">Serveur indisponible</p>`;
+      }
+    }
+
+    function applyFilters() {
+      const search = document.getElementById("searchInput").value.toLowerCase().trim();
+      const status = document.getElementById("statusFilter").value;
+      const period = document.getElementById("periodFilter").value;
+      const today = new Date();
+
+      filteredTransactions = allMyTransactions.filter(t => {
+        const createdAt = new Date(t.created_at);
+
+        const matchStatus = status === "all" || t.status === status;
+
+        const matchSearch =
+          !search ||
+          String(t.phone).toLowerCase().includes(search) ||
+          String(t.amount).toLowerCase().includes(search) ||
+          String(t.final_message || "").toLowerCase().includes(search) ||
+          String(t.rejection_reason || "").toLowerCase().includes(search);
+
+        let matchPeriod = true;
+
+        if (selectedDateFilter) {
+          matchPeriod = isSelectedDate(createdAt);
+        } else {
+          if (period === "today") matchPeriod = isSameDay(createdAt, today);
+          else if (period === "week") matchPeriod = isSameWeek(createdAt);
+          else if (period === "month") matchPeriod = isSameMonth(createdAt);
+        }
+
+        return matchStatus && matchSearch && matchPeriod;
+      });
+
+      currentPage = 1;
+      renderRequests();
+    }
+
+    function renderSummary() {
+      const period = document.getElementById("periodFilter").value;
+      const totalAmount = filteredTransactions.reduce((sum, t) => sum + Number(t.amount || 0), 0);
+
+      miniSummary.innerHTML = `
+        <div class="summary-line">
+          <strong>${getPeriodTitle(period)}</strong>
+          <span>${filteredTransactions.length} demande(s) • ${formatMoney(totalAmount)}</span>
+        </div>
+      `;
+    }
+
+    function renderRequests() {
+      renderSummary();
+
+      if (!filteredTransactions || filteredTransactions.length === 0) {
+        requestsList.innerHTML = `<p class="empty-text">Aucune demande trouvée pour cette période.</p>`;
+        paginationBox.innerHTML = "";
+        return;
+      }
+
+      const start = (currentPage - 1) * itemsPerPage;
+      const end = start + itemsPerPage;
+      const pageItems = filteredTransactions.slice(start, end);
+
+      requestsList.innerHTML = pageItems.map(t => `
+        <article class="request-card compact-request-card">
+          <div class="request-top">
+            <div>
+              <h3>${formatMoney(t.amount)}</h3>
+              <p>${t.phone}</p>
+            </div>
+            <span class="status-pill ${t.status}">${statusLabel(t.status)}</span>
+          </div>
+
+          ${t.final_message ? `<p class="compact-response success">✅ ${t.final_message}</p>` : ""}
+          ${t.rejection_reason ? `<p class="compact-response error">❌ ${t.rejection_reason}</p>` : ""}
+
+          <div class="request-info compact-info">
+            <p><strong>Date :</strong> ${formatDate(t.created_at)}</p>
+          </div>
+
+          <div class="request-actions">
+            <button class="small-btn primary-small-btn" onclick="openDetails(${t.id})">Voir détails</button>
+
+            ${t.status === "pending" ? `
+              <button class="small-btn danger-btn" onclick="confirmCancelRequest(${t.id})">🚫 Annuler</button>
+            ` : ""}
+          </div>
+        </article>
+      `).join("");
+
+      renderPagination();
+    }
+
+    function renderPagination() {
+      const totalPages = Math.ceil(filteredTransactions.length / itemsPerPage);
+
+      if (totalPages <= 1) {
+        paginationBox.innerHTML = "";
+        return;
+      }
+
+      paginationBox.innerHTML = `
+        <button class="small-btn" onclick="prevPage()" ${currentPage === 1 ? "disabled" : ""}>← Précédent</button>
+        <span>Page ${currentPage} / ${totalPages}</span>
+        <button class="small-btn" onclick="nextPage()" ${currentPage === totalPages ? "disabled" : ""}>Suivant →</button>
+      `;
+    }
+
+    function prevPage() {
+      if (currentPage > 1) {
+        currentPage--;
+        renderRequests();
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    }
+
+    function nextPage() {
+      const totalPages = Math.ceil(filteredTransactions.length / itemsPerPage);
+
+      if (currentPage < totalPages) {
+        currentPage++;
+        renderRequests();
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    }
+
+    function openDetails(id) {
+      const t = allMyTransactions.find(item => Number(item.id) === Number(id));
+      if (!t) return;
+
+      const oldModal = document.getElementById("detailsModal");
+      if (oldModal) oldModal.remove();
+
+      const receiptUrl = t.receipt_image_url ? `${BASE_URL}${t.receipt_image_url}` : "";
+      const terrainAudioUrl = t.terrain_audio_url ? `${BASE_URL}${t.terrain_audio_url}` : "";
+      const agentAudioUrl = t.agent_audio_url ? `${BASE_URL}${t.agent_audio_url}` : "";
+
+      document.body.insertAdjacentHTML("beforeend", `
+        <div class="custom-modal" id="detailsModal" onclick="closeDetails()">
+          <div class="modal-box details-modal-box" onclick="event.stopPropagation()">
+            <h2>Détails demande</h2>
+            <p>${formatMoney(t.amount)} • ${t.phone}</p>
+
+            <div class="request-info">
+              <p><strong>Statut :</strong> ${statusLabel(t.status)}</p>
+              <p><strong>Date :</strong> ${formatDate(t.created_at)}</p>
+              ${t.note ? `<p><strong>Note :</strong> ${t.note}</p>` : ""}
+            </div>
+
+            ${t.final_message ? `
+              <div class="terrain-result success-result">
+                <div class="big-sticker">✅</div>
+                <strong>${t.final_message}</strong>
+              </div>
+            ` : ""}
+
+            ${t.rejection_reason ? `
+              <div class="terrain-result reject-result">
+                <div class="big-sticker">❌</div>
+                <strong>${t.rejection_reason}</strong>
+              </div>
+            ` : ""}
+
+            ${receiptUrl ? `
+              <button type="button" class="receipt-thumb" onclick="openImageModal('${receiptUrl}')">
+                <img src="${receiptUrl}" alt="Capture transaction" />
+                <span>Voir capture en grand</span>
+              </button>
+            ` : ""}
+
+            ${terrainAudioUrl ? `
+              <div class="audio-player-box">
+                <div>
+                  <strong>🎙️ Mon audio</strong>
+                  <small>Audio envoyé avec la demande</small>
+                </div>
+                <audio controls src="${terrainAudioUrl}"></audio>
+              </div>
+            ` : ""}
+
+            ${agentAudioUrl ? `
+              <div class="audio-player-box agent-audio-box">
+                <div>
+                  <strong>🎧 Audio agent</strong>
+                  <small>Réponse vocale de l’agent</small>
+                </div>
+                <audio controls src="${agentAudioUrl}"></audio>
+              </div>
+            ` : ""}
+
+            <div class="modal-actions">
+              ${t.status === "pending" ? `
+                <button class="small-btn danger-btn" onclick="closeDetails(); confirmCancelRequest(${t.id})">Annuler cette demande</button>
+              ` : ""}
+              <button class="small-btn" onclick="closeDetails()">Fermer</button>
+            </div>
+          </div>
+        </div>
+      `);
+    }
+
+    function closeDetails() {
+      const modal = document.getElementById("detailsModal");
+      if (modal) modal.remove();
+    }
+
+    function openImageModal(url) {
+      if (!url) return;
+
+      const oldModal = document.getElementById("imageModal");
+      if (oldModal) oldModal.remove();
+
+      document.body.insertAdjacentHTML("beforeend", `
+        <div class="image-modal" id="imageModal" onclick="closeImageModal()">
+          <button class="image-close-btn" onclick="closeImageModal()">×</button>
+
+          <div class="image-modal-content" onclick="event.stopPropagation()">
+            <img src="${url}" alt="Capture transaction agrandie" />
+            <p>Capture transaction</p>
+          </div>
+        </div>
+      `);
+    }
+
+    function closeImageModal() {
+      const modal = document.getElementById("imageModal");
+      if (modal) modal.remove();
+    }
+
+    function confirmCancelRequest(id) {
+      const oldModal = document.getElementById("cancelModal");
+      if (oldModal) oldModal.remove();
+
+      document.body.insertAdjacentHTML("beforeend", `
+        <div class="custom-modal" id="cancelModal" onclick="closeCancelModal()">
+          <div class="modal-box" onclick="event.stopPropagation()">
+            <h2>Annuler la demande ?</h2>
+            <p>Cette action est possible seulement si la demande est encore en attente.</p>
+
+            <div class="modal-actions">
+              <button class="small-btn" onclick="closeCancelModal()">Non, garder</button>
+              <button class="small-btn danger-btn" onclick="cancelRequest(${id})">Oui, annuler</button>
+            </div>
+          </div>
+        </div>
+      `);
+    }
+
+    function closeCancelModal() {
+      const modal = document.getElementById("cancelModal");
+      if (modal) modal.remove();
+    }
+
+    async function cancelRequest(id) {
+      try {
+        const res = await fetch(`${API_URL}/transactions/cancel/${id}`, {
+          method: "PUT",
+          headers
+        });
+
+        const data = await res.json();
+
+        if (!data.success) {
+          closeCancelModal();
+          showPopup("error", "Annulation impossible", data.message || "Erreur annulation.");
+          return;
+        }
+
+        closeCancelModal();
+        showPopup("success", "Demande annulée", data.message || "Demande annulée avec succès.");
+        loadMyRequests();
+
+      } catch (error) {
+        closeCancelModal();
+        showPopup("error", "Serveur indisponible", "Impossible de contacter le serveur.");
+      }
+    }
+
+    function goBack() {
+      window.location.href = "dashboard.html";
+    }
+
+    loadMyRequests();
+  </script>
+
+
+
+</body>
+
+</html>

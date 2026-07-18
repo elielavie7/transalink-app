@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Choisir agence - TransaLink</title>
+
+  <link rel="stylesheet" href="../css/style.css" />
+  <script src="../js/config.js"></script>
+</head>
+
+<body class="page-body">
+
+  <main class="agency-screen">
+    <section class="agency-header">
+      <img src="../assets/transalink_logo.png" class="agency-logo" alt="TransaLink">
+      <h1>Choisir une agence</h1>
+      <p>Sélectionnez la maison avec laquelle vous voulez travailler.</p>
+    </section>
+
+    <section id="agencyGrid" class="agency-grid">
+      <p>Chargement des agences...</p>
+    </section>
+
+    <button class="small-btn danger-btn agency-logout" onclick="logout()">
+      Se déconnecter
+    </button>
+  </main>
+
+  <script src="../js/agency-selector.js"></script>
+</body>
+</html>

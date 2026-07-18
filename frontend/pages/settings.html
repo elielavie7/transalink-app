@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Paramètres - TransaLink</title>
+    <script src="../js/auth-guard.js"></script>
+
+    <script>
+        (function () {
+            const theme = localStorage.getItem("transalink_theme");
+            const fontScale = localStorage.getItem("transalink_font_scale") || "100";
+
+            document.documentElement.style.fontSize = fontScale + "%";
+
+            if (theme === "dark") {
+                document.documentElement.classList.add("dark-mode-preload");
+            }
+        })();
+    </script>
+    <link rel="stylesheet" href="../css/style.css" />
+</head>
+
+<body class="app-body">
+    <main class="mobile-app transaction-app">
+        <header class="app-header">
+            <button class="icon-btn" onclick="goBack()">←</button>
+            <div>
+                <h1>Paramètres</h1>
+                <p>Profil • Sécurité • Sauvegardes</p>
+            </div>
+            <button class="icon-btn">⚙️</button>
+        </header>
+
+        <section class="requests-page">
+
+            <div class="settings-card">
+                <h3>👤 Profil</h3>
+                <div class="request-info compact-info">
+                    <p><strong>Nom :</strong> <span id="profileName">-</span></p>
+                    <p><strong>Rôle :</strong> <span id="profileRole">-</span></p>
+                </div>
+                <button class="small-btn primary-small-btn" onclick="openNameModal()">Modifier le nom</button>
+            </div>
+
+            <div class="settings-card">
+                <h3>🔒 Sécurité</h3>
+                <div class="modal-actions">
+                    <button class="small-btn primary-small-btn" onclick="openPasswordModal()">Changer mot de
+                        passe</button>
+                    <button class="small-btn primary-small-btn" onclick="openPinModal()">Changer PIN
+                        transaction</button>
+                </div>
+            </div>
+
+            <div class="settings-card">
+                <h3>🎨 Apparence</h3>
+
+                <div class="modal-actions">
+                    <button class="small-btn primary-small-btn" onclick="setTheme('light')">☀️ Clair</button>
+                    <button class="small-btn primary-small-btn" onclick="setTheme('dark')">🌙 Sombre</button>
+                </div>
+
+                <label>🔠 Taille du texte</label>
+                <input class="font-slider" type="range" min="90" max="120" step="5" id="fontSlider"
+                    oninput="changeFontSize(this.value)" />
+                <p><strong id="fontValue">100%</strong></p>
+            </div>
+
+            <div class="settings-card" id="backupSection" style="display:none;">
+                <h3>💾 Sauvegardes</h3>
+                <button class="small-btn success-btn" onclick="createBackup()">Créer backup maintenant</button>
+                <div id="backupList" class="request-info compact-info" style="margin-top:12px;"></div>
+            </div>
+
+            <div class="settings-card">
+                <h3>ℹ️ Application</h3>
+                <div class="request-info compact-info">
+                    <p><strong>Version :</strong> TransaLink v1.0</p>
+                    <p><strong>Powered by :</strong> Ir Elie</p>
+                </div>
+            </div>
+
+        </section>
+    </main>
+    <script src="../js/config.js"></script>
+
+    <script src="../js/app-settings.js"></script>
+    <script src="../js/app-nav.js"></script>
+    <script>
+
+        const token = localStorage.getItem("transalink_token");
+        let user = JSON.parse(localStorage.getItem("transalink_user"));
+
+        if (!token || !user) {
+            window.location.href = "../index.html";
+        }
+
+        const headers = {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+        };
+
+        document.getElementById("profileName").textContent = user.name;
+        document.getElementById("profileRole").textContent =
+            user.role === "agent" ? "Agent principal" : "Frère terrain";
+
+        if (user.role === "agent") {
+            document.getElementById("backupSection").style.display = "block";
+            loadBackups();
+        }
+
+        function goBack() {
+            window.location.href = "dashboard.html";
+        }
+
+        function showPopup(type, title, message) {
+            const oldPopup = document.getElementById("appPopup");
+            if (oldPopup) oldPopup.remove();
+
+            const isSuccess = type === "success";
+
+            document.body.insertAdjacentHTML("beforeend", `
+        <div class="custom-modal" id="appPopup" style="z-index:99999;">
+          <div class="modal-box" onclick="event.stopPropagation()">
+            <h2>${isSuccess ? "✅" : "❌"} ${title}</h2>
+            <p>${message}</p>
+            <div class="modal-actions">
+              <button class="small-btn ${isSuccess ? "success-btn" : "danger-btn"}" onclick="closePopup(event)">OK</button>
+            </div>
+          </div>
+        </div>
+      `);
+        }
+
+        function closePopup(event) {
+            if (event) event.stopPropagation();
+            const popup = document.getElementById("appPopup");
+            if (popup) popup.remove();
+        }
+
+        function openNameModal() {
+            document.body.insertAdjacentHTML("beforeend", `
+        <div class="custom-modal" id="nameModal" onclick="closeModal('nameModal')">
+          <div class="modal-box" onclick="event.stopPropagation()">
+            <h2>Modifier le nom</h2>
+
+            <label>Ancien nom</label>
+            <input id="currentName" value="${user.name}" />
+
+            <label>Nouveau nom</label>
+            <input id="newName" placeholder="Nouveau nom" />
+
+            <label>Mot de passe actuel</label>
+            <input id="namePassword" type="password" placeholder="Mot de passe" />
+
+            <div class="modal-actions">
+              <button class="small-btn danger-btn" onclick="closeModal('nameModal')">Annuler</button>
+              <button class="small-btn success-btn" onclick="updateName()">Enregistrer</button>
+            </div>
+          </div>
+        </div>
+      `);
+        }
+
+        async function updateName() {
+            const current_name = document.getElementById("currentName").value.trim();
+            const new_name = document.getElementById("newName").value.trim();
+            const password = document.getElementById("namePassword").value.trim();
+
+            try {
+                const res = await fetch(`${API_URL}/users/name`, {
+                    method: "PUT",
+                    headers,
+                    body: JSON.stringify({ current_name, new_name, password }),
+                });
+
+                const data = await res.json();
+
+                if (!data.success) {
+                    showPopup("error", "Erreur", data.message || "Modification impossible");
+                    return;
+                }
+
+                user = data.user;
+                localStorage.setItem("transalink_user", JSON.stringify(user));
+                document.getElementById("profileName").textContent = user.name;
+
+                closeModal("nameModal");
+                showPopup("success", "Nom modifié", data.message);
+
+            } catch {
+                showPopup("error", "Serveur indisponible", "Impossible de contacter le serveur.");
+            }
+        }
+
+        function openPasswordModal() {
+            document.body.insertAdjacentHTML("beforeend", `
+        <div class="custom-modal" id="passwordModal" onclick="closeModal('passwordModal')">
+          <div class="modal-box" onclick="event.stopPropagation()">
+            <h2>Changer mot de passe</h2>
+
+            <label>Ancien mot de passe</label>
+            <input id="oldPassword" type="password" />
+
+            <label>Nouveau mot de passe</label>
+            <input id="newPassword" type="password" />
+
+            <label>Confirmer nouveau mot de passe</label>
+            <input id="confirmPassword" type="password" />
+
+            <div class="modal-actions">
+              <button class="small-btn danger-btn" onclick="closeModal('passwordModal')">Annuler</button>
+              <button class="small-btn success-btn" onclick="changePassword()">Modifier</button>
+            </div>
+          </div>
+        </div>
+      `);
+        }
+
+        async function changePassword() {
+            const old_password = document.getElementById("oldPassword").value.trim();
+            const new_password = document.getElementById("newPassword").value.trim();
+            const confirm = document.getElementById("confirmPassword").value.trim();
+
+            if (new_password !== confirm) {
+                showPopup("error", "Erreur", "Les nouveaux mots de passe ne correspondent pas.");
+                return;
+            }
+
+            try {
+                const res = await fetch(`${API_URL}/users/password`, {
+                    method: "PUT",
+                    headers,
+                    body: JSON.stringify({ old_password, new_password }),
+                });
+
+                const data = await res.json();
+
+                if (!data.success) {
+                    showPopup("error", "Erreur", data.message || "Modification impossible");
+                    return;
+                }
+
+                closeModal("passwordModal");
+                showPopup("success", "Mot de passe modifié", data.message);
+
+            } catch {
+                showPopup("error", "Serveur indisponible", "Impossible de contacter le serveur.");
+            }
+        }
+
+        function openPinModal() {
+            document.body.insertAdjacentHTML("beforeend", `
+        <div class="custom-modal" id="pinModal" onclick="closeModal('pinModal')">
+          <div class="modal-box" onclick="event.stopPropagation()">
+            <h2>Changer PIN transaction</h2>
+
+            <label>Ancien PIN</label>
+            <input id="oldPin" type="password" maxlength="6" inputmode="numeric" />
+
+            <label>Nouveau PIN</label>
+            <input id="newPin" type="password" maxlength="6" inputmode="numeric" />
+
+            <label>Confirmer nouveau PIN</label>
+            <input id="confirmPin" type="password" maxlength="6" inputmode="numeric" />
+
+            <div class="modal-actions">
+              <button class="small-btn danger-btn" onclick="closeModal('pinModal')">Annuler</button>
+              <button class="small-btn success-btn" onclick="changePin()">Modifier</button>
+            </div>
+          </div>
+        </div>
+      `);
+        }
+
+        async function changePin() {
+            const old_pin = document.getElementById("oldPin").value.trim();
+            const new_pin = document.getElementById("newPin").value.trim();
+            const confirm = document.getElementById("confirmPin").value.trim();
+
+            if (new_pin !== confirm) {
+                showPopup("error", "Erreur", "Les nouveaux PIN ne correspondent pas.");
+                return;
+            }
+
+            try {
+                const res = await fetch(`${API_URL}/users/transaction-pin`, {
+                    method: "PUT",
+                    headers,
+                    body: JSON.stringify({ old_pin, new_pin }),
+                });
+
+                const data = await res.json();
+
+                if (!data.success) {
+                    showPopup("error", "Erreur", data.message || "Modification impossible");
+                    return;
+                }
+
+                closeModal("pinModal");
+                showPopup("success", "PIN modifié", data.message);
+
+            } catch {
+                showPopup("error", "Serveur indisponible", "Impossible de contacter le serveur.");
+            }
+        }
+
+        function setTheme(theme) {
+            localStorage.setItem("transalink_theme", theme);
+            applyTheme();
+        }
+
+        function applyTheme() {
+            const theme = localStorage.getItem("transalink_theme") || "light";
+            document.body.classList.toggle("dark-mode", theme === "dark");
+        }
+
+        function changeFontSize(value) {
+            localStorage.setItem("transalink_font_scale", value);
+            document.documentElement.style.fontSize = `${value}%`;
+            document.getElementById("fontValue").textContent = `${value}%`;
+        }
+
+        function applyFontSize() {
+            const value = localStorage.getItem("transalink_font_scale") || "100";
+            document.documentElement.style.fontSize = `${value}%`;
+            document.getElementById("fontSlider").value = value;
+            document.getElementById("fontValue").textContent = `${value}%`;
+        }
+
+        async function createBackup() {
+            try {
+                const res = await fetch(`${API_URL}/backups/create`, {
+                    method: "POST",
+                    headers,
+                });
+
+                const data = await res.json();
+
+                if (!data.success) {
+                    showPopup("error", "Backup impossible", data.message || "Erreur backup");
+                    return;
+                }
+
+                showPopup("success", "Backup créé", data.message);
+                loadBackups();
+
+            } catch {
+                showPopup("error", "Serveur indisponible", "Impossible de créer le backup.");
+            }
+        }
+
+        async function loadBackups() {
+            try {
+                const res = await fetch(`${API_URL}/backups`, { headers });
+                const data = await res.json();
+
+                if (!data.success) return;
+
+                const box = document.getElementById("backupList");
+
+                if (!data.backups || data.backups.length === 0) {
+                    box.innerHTML = `<p>Aucun backup disponible.</p>`;
+                    return;
+                }
+
+                box.innerHTML = data.backups.map((b, index) => `
+  <div class="backup-item">
+    <div>
+      <strong>Backup #${index + 1}</strong>
+      <small>${new Date(b.created_at).toLocaleString("fr-FR")}</small>
+      <span>${formatBackupSize(b.size)}</span>
+    </div>
+
+    <button class="small-btn primary-small-btn" onclick="downloadBackup('${b.file}')">
+      Télécharger
+    </button>
+  </div>
+`).join("");
+
+            } catch { }
+        }
+
+        async function downloadBackup(file) {
+            try {
+                const res = await fetch(`${API_URL}/backups/download/${file}`, {
+                    method: "GET",
+                    headers: {
+                        Authorization: `Bearer ${token}`
+                    }
+                });
+
+                if (!res.ok) {
+                    const data = await res.json().catch(() => null);
+                    showPopup(
+                        "error",
+                        "Téléchargement impossible",
+                        data?.message || "Impossible de télécharger le backup."
+                    );
+                    return;
+                }
+
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = file;
+                document.body.appendChild(a);
+                a.click();
+
+                a.remove();
+                window.URL.revokeObjectURL(url);
+
+            } catch (error) {
+                showPopup(
+                    "error",
+                    "Serveur indisponible",
+                    "Impossible de télécharger le backup."
+                );
+            }
+        }
+        function formatBackupSize(bytes) {
+            if (!bytes) return "0 Ko";
+            const kb = bytes / 1024;
+            if (kb < 1024) return `${kb.toFixed(1)} Ko`;
+            return `${(kb / 1024).toFixed(2)} Mo`;
+        }
+
+        function closeModal(id) {
+            const modal = document.getElementById(id);
+            if (modal) modal.remove();
+        }
+
+        applyTheme();
+        applyFontSize();
+    </script>
+
+
+
+</body>
+
+</html>

@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nouvelle demande - TransaLink</title>
+  <script src="../js/auth-guard.js"></script>
+
+  <script>
+    (function () {
+      const theme = localStorage.getItem("transalink_theme");
+      const fontScale = localStorage.getItem("transalink_font_scale") || "100";
+
+      document.documentElement.style.fontSize = fontScale + "%";
+
+      if (theme === "dark") {
+        document.documentElement.classList.add("dark-mode-preload");
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="../css/style.css" />
+</head>
+
+<body class="app-body">
+  <main class="mobile-app transaction-app">
+
+    <header class="app-header">
+      <button class="icon-btn" onclick="goBack()">←</button>
+      <div>
+        <h1>Nouvelle demande</h1>
+        <p>Créer une demande de transaction</p>
+      </div>
+      <button class="icon-btn">💸</button>
+    </header>
+
+    <section class="form-page transaction-layout">
+      <div class="form-card transaction-form-card">
+
+        <div class="form-group">
+          <label>Montant (FC)</label>
+          <input type="text" id="amount" placeholder="Ex : 150.000" inputmode="numeric" />
+          <small class="field-help">Le montant sera formaté automatiquement.</small>
+        </div>
+
+        <div class="form-group">
+          <label>Numéro bénéficiaire</label>
+          <input type="text" id="receiver_number" placeholder="Ex : 0978945738" maxlength="10" inputmode="numeric" />
+          <small class="field-help">Maximum 10 chiffres.</small>
+        </div>
+
+        <div class="form-group">
+          <label>Note (optionnelle)</label>
+          <textarea id="note" placeholder="Ex : urgent"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label>PIN transaction</label>
+          <div class="pin-wrap">
+            <input type="password" id="transaction_pin" placeholder="Votre PIN" maxlength="6" inputmode="numeric" />
+            <button type="button" class="pin-toggle" id="togglePin">👁️</button>
+          </div>
+          <small class="field-help">Sécurité avant envoi de la demande.</small>
+        </div>
+
+        <div class="audio-card">
+          <div class="audio-head">
+            <div>
+              <h3>🎙️ Preuve audio</h3>
+              <p>Enregistre une courte confirmation vocale.</p>
+            </div>
+            <span id="audioStatus">Aucun audio</span>
+          </div>
+
+          <div class="voice-wave" id="voiceWave">
+            <span></span><span></span><span></span><span></span><span></span>
+          </div>
+
+          <div class="audio-actions">
+            <button type="button" class="small-btn primary-small-btn" id="startRecordBtn">🎙️ Démarrer</button>
+            <button type="button" class="small-btn danger-btn" id="stopRecordBtn" disabled>⏹️ Arrêter</button>
+            <button type="button" class="small-btn danger-btn" id="deleteAudioBtn" disabled>🗑️ Supprimer</button>
+          </div>
+
+          <audio id="audioPreview" controls style="display:none;"></audio>
+
+          <small class="field-help">
+            Cette preuve sera liée à la demande envoyée à l’agent.
+          </small>
+        </div>
+      </div>
+
+      <div class="preview-card transaction-preview-card">
+        <div class="preview-icon">💬</div>
+        <h3>Message automatique</h3>
+
+        <div class="message-preview" id="messagePreview">
+          Tuma 0 FC kwa hii namba :
+        </div>
+
+        <button class="copy-btn" onclick="copyMessage()">📋 Copier message</button>
+      </div>
+
+      <button class="primary-btn" id="submitBtn" onclick="openConfirmTransactionModal()">
+        Envoyer la demande
+      </button>
+
+      <p id="messageBox"></p>
+    </section>
+
+    <div class="custom-modal" id="requestSuccessModal" style="display:none; z-index:999999;">
+      <div class="modal-box" onclick="event.stopPropagation()">
+        <h2>✅ Demande envoyée</h2>
+        <p>Votre demande a été envoyée avec succès à l’agent.</p>
+
+        <div class="modal-actions">
+          <button type="button" class="small-btn success-btn" onclick="closeSuccessRequestPopup(event)">
+            OK
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+  <script src="../js/config.js"></script>
+
+  <script src="../js/app-settings.js"></script>
+  <script src="../js/app-nav.js"></script>
+
+  <script>
+const selectedAgencyId = localStorage.getItem("selected_agency_id");
+    const token = localStorage.getItem("transalink_token");
+    const user = JSON.parse(localStorage.getItem("transalink_user"));
+
+    if (!token || !user) {
+      window.location.href = "../index.html";
+    }
+
+    const amountInput = document.getElementById("amount");
+    const numberInput = document.getElementById("receiver_number");
+    const preview = document.getElementById("messagePreview");
+    const messageBox = document.getElementById("messageBox");
+    const pinInput = document.getElementById("transaction_pin");
+    const togglePin = document.getElementById("togglePin");
+    const submitBtn = document.getElementById("submitBtn");
+
+    const startRecordBtn = document.getElementById("startRecordBtn");
+    const stopRecordBtn = document.getElementById("stopRecordBtn");
+    const deleteAudioBtn = document.getElementById("deleteAudioBtn");
+    const audioPreview = document.getElementById("audioPreview");
+    const audioStatus = document.getElementById("audioStatus");
+
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let audioBlob = null;
+    let audioStream = null;
+
+    togglePin.addEventListener("click", () => {
+      const hidden = pinInput.type === "password";
+      pinInput.type = hidden ? "text" : "password";
+      togglePin.textContent = hidden ? "🙈" : "👁️";
+    });
+
+    function showPopup(type, title, message) {
+      const oldPopup = document.getElementById("appPopup");
+      if (oldPopup) oldPopup.remove();
+
+      const isSuccess = type === "success";
+
+      document.body.insertAdjacentHTML("beforeend", `
+        <div class="custom-modal" id="appPopup" style="z-index:99999;">
+          <div class="modal-box" onclick="event.stopPropagation()">
+            <h2>${isSuccess ? "✅" : "❌"} ${title}</h2>
+            <p>${message}</p>
+            <div class="modal-actions">
+              <button type="button" class="small-btn ${isSuccess ? "success-btn" : "danger-btn"}" onclick="closePopup(event)">OK</button>
+            </div>
+          </div>
+        </div>
+      `);
+    }
+
+    function closePopup(event) {
+      if (event) event.stopPropagation();
+      const popup = document.getElementById("appPopup");
+      if (popup) popup.remove();
+    }
+
+    function showSuccessRequestPopup() {
+      const modal = document.getElementById("requestSuccessModal");
+      if (modal) modal.style.display = "flex";
+    }
+
+    function closeSuccessRequestPopup(event) {
+      if (event) event.stopPropagation();
+
+      const modal = document.getElementById("requestSuccessModal");
+      if (modal) modal.style.display = "none";
+
+      amountInput.value = "";
+      numberInput.value = "";
+      document.getElementById("note").value = "";
+      pinInput.value = "";
+
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Envoyer la demande";
+
+      resetAudio();
+      updatePreview();
+      clearProgress();
+    }
+
+    function setProgress(message) {
+      messageBox.textContent = message;
+      messageBox.className = "";
+    }
+
+    function clearProgress() {
+      messageBox.textContent = "";
+      messageBox.className = "";
+    }
+
+    function digitsOnly(value) {
+      return value.replace(/\D/g, "");
+    }
+
+    function formatWithDots(value) {
+      const digits = digitsOnly(value);
+      if (!digits) return "";
+      return Number(digits).toLocaleString("fr-FR").replace(/\s/g, ".");
+    }
+
+    function amountToNumber(value) {
+      return Number(digitsOnly(value));
+    }
+
+    function updatePreview() {
+      const amount = amountInput.value || "0";
+      const number = numberInput.value;
+      preview.textContent = `Tuma ${amount} FC kwa hii namba : ${number}`;
+    }
+
+    amountInput.addEventListener("input", () => {
+      amountInput.value = formatWithDots(amountInput.value);
+      updatePreview();
+    });
+
+    numberInput.addEventListener("input", () => {
+      numberInput.value = digitsOnly(numberInput.value).slice(0, 10);
+      updatePreview();
+    });
+
+    function copyMessage() {
+      navigator.clipboard.writeText(preview.textContent);
+      showPopup("success", "Message copié", "Le message automatique a été copié.");
+    }
+
+    startRecordBtn.addEventListener("click", async () => {
+      try {
+        audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+        mediaRecorder = new MediaRecorder(audioStream);
+        audioChunks = [];
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) audioChunks.push(event.data);
+        };
+
+        mediaRecorder.onstop = () => {
+          audioBlob = new Blob(audioChunks, { type: "audio/webm" });
+          const audioUrl = URL.createObjectURL(audioBlob);
+
+          audioPreview.src = audioUrl;
+          audioPreview.style.display = "block";
+
+          audioStatus.textContent = "Audio prêt";
+          audioStatus.className = "audio-ready";
+          document.getElementById("voiceWave").classList.remove("show");
+
+          startRecordBtn.disabled = false;
+          stopRecordBtn.disabled = true;
+          deleteAudioBtn.disabled = false;
+
+          if (audioStream) {
+            audioStream.getTracks().forEach(track => track.stop());
+          }
+        };
+
+        mediaRecorder.start();
+
+        audioStatus.textContent = "Enregistrement...";
+        audioStatus.className = "audio-recording";
+        document.getElementById("voiceWave").classList.add("show");
+
+        startRecordBtn.disabled = true;
+        stopRecordBtn.disabled = false;
+        deleteAudioBtn.disabled = true;
+
+      } catch (error) {
+        showPopup("error", "Micro indisponible", "Micro non autorisé ou indisponible.");
+      }
+    });
+
+    stopRecordBtn.addEventListener("click", () => {
+      if (mediaRecorder && mediaRecorder.state === "recording") {
+        mediaRecorder.stop();
+      }
+    });
+
+    deleteAudioBtn.addEventListener("click", () => {
+      resetAudio();
+    });
+
+    function resetAudio() {
+      audioBlob = null;
+      audioChunks = [];
+
+      if (audioStream) {
+        audioStream.getTracks().forEach(track => track.stop());
+        audioStream = null;
+      }
+
+      audioPreview.src = "";
+      audioPreview.style.display = "none";
+
+      audioStatus.textContent = "Aucun audio";
+      audioStatus.className = "";
+      document.getElementById("voiceWave").classList.remove("show");
+
+      startRecordBtn.disabled = false;
+      stopRecordBtn.disabled = true;
+      deleteAudioBtn.disabled = true;
+    }
+
+    async function uploadAudio(transactionId) {
+      if (!audioBlob) {
+        throw new Error("Audio obligatoire : enregistre une preuve vocale avant d’envoyer.");
+      }
+
+      const formData = new FormData();
+      formData.append("audio", audioBlob, `terrain-${transactionId}.webm`);
+      formData.append("audio_type", "terrain");
+      formData.append("agency_id", selectedAgencyId);
+
+      const res = await fetch(`${API_URL}/transactions/audio/${transactionId}`, {
+        method: "PUT",
+        headers: { "Authorization": `Bearer ${token}` },
+        body: formData
+      });
+
+      const data = await res.json();
+
+      if (!data.success) {
+        throw new Error(data.message || "Erreur upload audio");
+      }
+    }
+
+    function validateForm(amount, phone, transaction_pin) {
+      if (!amount || !phone) {
+        showPopup("error", "Champs obligatoires", "Montant et numéro obligatoires.");
+        return false;
+      }
+
+      if (phone.length !== 10) {
+        showPopup("error", "Numéro invalide", "Le numéro doit contenir exactement 10 chiffres.");
+        return false;
+      }
+
+      if (!transaction_pin) {
+        showPopup("error", "PIN obligatoire", "PIN transaction obligatoire.");
+        return false;
+      }
+
+      if (!audioBlob) {
+        showPopup("error", "Audio obligatoire", "Enregistre une preuve vocale avant d’envoyer.");
+        return false;
+      }
+
+      return true;
+    }
+    function openConfirmTransactionModal() {
+      const amount = amountToNumber(amountInput.value);
+      const phone = numberInput.value.trim();
+      const transaction_pin = pinInput.value.trim();
+
+      clearProgress();
+
+      if (!validateForm(amount, phone, transaction_pin)) return;
+
+      const oldModal = document.getElementById("confirmTransactionModal");
+      if (oldModal) oldModal.remove();
+
+      document.body.insertAdjacentHTML("beforeend", `
+    <div class="custom-modal" id="confirmTransactionModal" onclick="closeConfirmTransactionModal()">
+      <div class="modal-box" onclick="event.stopPropagation()">
+        <h2>📤 Confirmer la demande</h2>
+        <p>Vérifie bien les informations avant l’envoi.</p>
+
+        <div class="final-message-preview">
+          <p><strong>Montant :</strong> ${amountInput.value} FC</p>
+          <p><strong>Numéro :</strong> ${phone}</p>
+          <p><strong>Message :</strong> ${preview.textContent}</p>
+          <p class="success"><strong>Audio :</strong> ✅ Preuve audio prête</p>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="small-btn primary-small-btn" onclick="closeConfirmTransactionModal()">
+            Annuler
+          </button>
+
+          <button type="button" class="small-btn success-btn" onclick="confirmAndSubmitTransaction()">
+            Confirmer l’envoi
+          </button>
+        </div>
+      </div>
+    </div>
+  `);
+    }
+
+    function closeConfirmTransactionModal() {
+      const modal = document.getElementById("confirmTransactionModal");
+      if (modal) modal.remove();
+    }
+
+    function confirmAndSubmitTransaction() {
+      closeConfirmTransactionModal();
+      submitTransaction();
+    }
+    async function submitTransaction() {
+      const amount = amountToNumber(amountInput.value);
+      const phone = numberInput.value.trim();
+      const note = document.getElementById("note").value.trim();
+      const transaction_pin = pinInput.value.trim();
+
+      clearProgress();
+
+      if (!validateForm(amount, phone, transaction_pin)) return;
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Envoi en cours...";
+      setProgress("Création de la demande...");
+
+      try {
+        const response = await fetch(`${API_URL}/transactions/create`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            amount,
+            phone,
+            client_name: null,
+            type: "envoi",
+            created_by: user.id,
+            note,
+            transaction_pin,
+            original_message: preview.textContent,
+            agency_id: selectedAgencyId,
+          })
+        });
+
+        const data = await response.json();
+
+        if (!data.success) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = "Envoyer la demande";
+          showPopup("error", "Demande impossible", data.message || "Erreur création.");
+          return;
+        }
+
+        setProgress("Ajout de la preuve audio...");
+        await uploadAudio(data.transaction.id);
+
+        setProgress("Demande envoyée.");
+        showSuccessRequestPopup();
+
+      } catch (error) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Envoyer la demande";
+        showPopup("error", "Erreur", error.message || "Serveur indisponible.");
+      }
+    }
+
+    function goBack() {
+      window.location.href = "dashboard.html";
+    }
+
+    updatePreview();
+  </script>
+
+
+</body>
+
+</html>

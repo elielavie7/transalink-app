@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Entrées - TransaLink</title>
+    <script src="../js/auth-guard.js"></script>
+
+    <script>
+        (function () {
+            const theme = localStorage.getItem("transalink_theme");
+            const fontScale = localStorage.getItem("transalink_font_scale") || "100";
+
+            document.documentElement.style.fontSize = fontScale + "%";
+
+            if (theme === "dark") {
+                document.documentElement.classList.add("dark-mode-preload");
+            }
+        })();
+    </script>
+    <link rel="stylesheet" href="../css/style.css" />
+</head>
+
+<body class="app-body">
+
+    <main class="mobile-app transaction-app">
+
+        <header class="app-header">
+            <button class="icon-btn" onclick="goBack()">←</button>
+
+            <div>
+                <h1>Entrées caisse</h1>
+                <p>Capital • Dépôts • solde initial</p>
+            </div>
+
+            <button class="notif-btn" onclick="openCreateModal()">
+                ➕
+            </button>
+        </header>
+
+        <section class="requests-page">
+
+            <div class="mini-card status-approved" id="incomeSummary">
+                <p>Total des entrées</p>
+                <strong>0 FC</strong>
+            </div>
+
+            <div class="filter-bar">
+
+                <input type="text" id="searchInput" placeholder="Rechercher une source..." oninput="applyFilters()" />
+
+                <select id="periodFilter" onchange="applyFilters()">
+                    <option value="today">Aujourd’hui</option>
+                    <option value="week">Cette semaine</option>
+                    <option value="month">Ce mois</option>
+                    <option value="all">Tout</option>
+                </select>
+
+                <button type="button" class="calendar-filter-btn" onclick="openDateModal()">
+                    📅
+                    <span id="selectedDateLabel">Date</span>
+                </button>
+
+            </div>
+
+            <div class="requests-list" id="incomeList">
+                <p class="empty-text">Chargement...</p>
+            </div>
+
+        </section>
+
+    </main>
+    <script src="../js/config.js"></script>
+
+    <script src="../js/app-settings.js"></script>
+    <script src="../js/app-nav.js"></script>
+    <script>
+
+        const token = localStorage.getItem("transalink_token");
+        const user = JSON.parse(localStorage.getItem("transalink_user"));
+
+        if (!token || !user) {
+            window.location.href = "../index.html";
+        }
+
+        if (user.role !== "agent") {
+            showAppModal("error", "Accès refusé", "Cette page est réservée à l'agent.");
+            window.location.href = "dashboard.html";
+        }
+
+        const headers = {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+        };
+
+        let incomes = [];
+        let filteredIncomes = [];
+        let selectedDateFilter = "";
+
+        function goBack() {
+            window.location.href = "dashboard.html";
+        }
+
+        function formatMoney(amount) {
+            return Number(amount || 0).toLocaleString("fr-FR") + " FC";
+        }
+        function showAppModal(type, title, message) {
+            const oldModal = document.getElementById("appModal");
+            if (oldModal) oldModal.remove();
+
+            const isSuccess = type === "success";
+
+            document.body.insertAdjacentHTML("beforeend", `
+    <div class="custom-modal" id="appModal" onclick="closeAppModal()">
+      <div class="modal-box" onclick="event.stopPropagation()">
+        <h2>${isSuccess ? "✅" : "⚠️"} ${title}</h2>
+        <p>${message}</p>
+
+        <div class="modal-actions">
+          <button class="small-btn ${isSuccess ? "success-btn" : "danger-btn"}"
+                  onclick="closeAppModal()">
+            OK
+          </button>
+        </div>
+      </div>
+    </div>
+  `);
+        }
+
+        function closeAppModal() {
+            const modal = document.getElementById("appModal");
+            if (modal) modal.remove();
+        }
+
+        function parseMoney(value) {
+            return Number(String(value || "").replace(/\D/g, "")) || 0;
+        }
+
+        function formatIncomeAmount(input) {
+            const value = parseMoney(input.value);
+            input.value = value ? value.toLocaleString("fr-FR") : "";
+            updateIncomeNoteAuto();
+        }
+
+        function formatShortMoney(amount) {
+            const value = Number(amount || 0);
+
+            if (value >= 1000000) {
+                return (value / 1000000).toLocaleString("fr-FR") + "K";
+            }
+
+            if (value >= 1000) {
+                return (value / 1000).toLocaleString("fr-FR") + "K";
+            }
+
+            return value.toLocaleString("fr-FR");
+        }
+
+        function updateIncomeNoteAuto() {
+            const amount = parseMoney(document.getElementById("incomeAmount")?.value);
+            const source = document.getElementById("incomeSource")?.value.trim();
+            const noteInput = document.getElementById("incomeNote");
+
+            if (!noteInput) return;
+
+            if (!amount || !source) {
+                noteInput.value = "";
+                return;
+            }
+
+            noteInput.value = `${formatShortMoney(amount)} de FC / voir ${source.toUpperCase()}`;
+        }
+
+        function isSameDay(date1, date2) {
+            return date1.getDate() === date2.getDate()
+                && date1.getMonth() === date2.getMonth()
+                && date1.getFullYear() === date2.getFullYear();
+        }
+
+        function isSameWeek(date) {
+            const today = new Date();
+            const currentDay = today.getDay() || 7;
+
+            const monday = new Date(today);
+            monday.setDate(today.getDate() - currentDay + 1);
+            monday.setHours(0, 0, 0, 0);
+
+            const sunday = new Date(monday);
+            sunday.setDate(monday.getDate() + 6);
+            sunday.setHours(23, 59, 59, 999);
+
+            return date >= monday && date <= sunday;
+        }
+
+        function isSameMonth(date) {
+            const today = new Date();
+
+            return date.getMonth() === today.getMonth()
+                && date.getFullYear() === today.getFullYear();
+        }
+
+        function isSelectedDate(date) {
+            if (!selectedDateFilter) return true;
+
+            const selected = new Date(selectedDateFilter);
+            const target = new Date(date);
+
+            return selected.getFullYear() === target.getFullYear()
+                && selected.getMonth() === target.getMonth()
+                && selected.getDate() === target.getDate();
+        }
+
+        function renderIncomes() {
+            updateSummary();
+
+            if (filteredIncomes.length === 0) {
+                incomeList.innerHTML = `
+                    <p class="empty-text">
+                        Aucune entrée trouvée.
+                    </p>
+                `;
+                return;
+            }
+
+            incomeList.innerHTML = filteredIncomes.map(item => `
+
+                <div class="request-card compact-request-card">
+
+                    <div class="request-top">
+
+                        <div>
+                            <h3>${formatMoney(item.amount)}</h3>
+                            <p>${item.source}</p>
+                        </div>
+
+                        <span class="status-pill approved">
+                            Entrée
+                        </span>
+
+                    </div>
+
+                    <div class="request-info compact-info">
+
+                        <p>
+                            <strong>Source :</strong>
+                            ${item.source}
+                        </p>
+
+                        <p>
+                            <strong>Note :</strong>
+                            ${item.note || "Aucune note"}
+                        </p>
+
+                        <p>
+                            <strong>Ajouté par :</strong>
+                            ${item.created_by_name || "Agent"}
+                        </p>
+
+                        <p>
+                            <strong>Date :</strong>
+                            ${new Date(item.created_at).toLocaleString("fr-FR")}
+                        </p>
+
+                    </div>
+
+                    <div class="request-actions">
+
+                        <button class="small-btn danger-btn"
+                            onclick="askDeleteIncome(${item.id})">
+                            Supprimer
+                        </button>
+
+                    </div>
+
+                </div>
+
+            `).join("");
+        }
+
+        function updateSummary() {
+            const total = filteredIncomes.reduce((sum, item) => {
+                return sum + Number(item.amount || 0);
+            }, 0);
+
+            document.getElementById("incomeSummary").innerHTML = `
+                <p>Total des entrées</p>
+                <strong>${formatMoney(total)}</strong>
+            `;
+        }
+
+        function applyFilters() {
+            const search = document.getElementById("searchInput").value.toLowerCase().trim();
+            const period = document.getElementById("periodFilter").value;
+
+            filteredIncomes = incomes.filter(item => {
+                const createdAt = new Date(item.created_at);
+
+                const matchSearch =
+                    !search ||
+                    String(item.source || "").toLowerCase().includes(search) ||
+                    String(item.note || "").toLowerCase().includes(search) ||
+                    String(item.amount || "").toLowerCase().includes(search);
+
+                let matchPeriod = true;
+
+                if (selectedDateFilter) {
+                    matchPeriod = isSelectedDate(createdAt);
+                } else {
+                    if (period === "today") {
+                        matchPeriod = isSameDay(createdAt, new Date());
+                    }
+
+                    if (period === "week") {
+                        matchPeriod = isSameWeek(createdAt);
+                    }
+
+                    if (period === "month") {
+                        matchPeriod = isSameMonth(createdAt);
+                    }
+                }
+
+                return matchSearch && matchPeriod;
+            });
+
+            renderIncomes();
+        }
+
+        async function loadIncomes() {
+            try {
+                const res = await fetch(`${API_URL}/incomes`, {
+                    headers
+                });
+
+                const data = await res.json();
+
+                if (!data.success) {
+                    throw new Error(data.message);
+                }
+
+                incomes = data.data || [];
+
+                applyFilters();
+
+            } catch (error) {
+                incomeList.innerHTML = `
+                    <p class="empty-text">
+                        Impossible de charger les entrées.
+                    </p>
+                `;
+            }
+        }
+
+        function openCreateModal() {
+            document.body.insertAdjacentHTML("beforeend", `
+
+                <div class="custom-modal"
+                    id="createIncomeModal"
+                    onclick="closeCreateModal()">
+
+                    <div class="modal-box"
+                        onclick="event.stopPropagation()">
+
+                        <h2>💰 Nouvelle entrée</h2>
+
+                        <p>
+                            Ajouter une entrée manuelle dans la caisse.
+                        </p>
+
+                        <label>Montant</label>
+                        <input type="text"
+                            id="incomeAmount"
+                            placeholder="Ex: 8.000.000"
+                            oninput="formatIncomeAmount(this)" />
+
+                        <label>Source</label>
+                        <input type="text"
+                            id="incomeSource"
+                            placeholder="Ex: Voir elie"
+                            oninput="updateIncomeNoteAuto()" />
+
+                        <label>Note automatique</label>
+                        <textarea id="incomeNote"
+                            placeholder="La note sera générée automatiquement..."
+                            readonly></textarea>
+
+                        <div class="modal-actions">
+
+                            <button class="small-btn danger-btn"
+                                onclick="closeCreateModal()">
+                                Annuler
+                            </button>
+
+                            <button class="small-btn success-btn"
+                                onclick="openConfirmCreateModal()">
+                                Continuer
+                            </button>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            `);
+        }
+
+        function closeCreateModal() {
+            const modal = document.getElementById("createIncomeModal");
+            if (modal) modal.remove();
+        }
+
+        function openConfirmCreateModal() {
+            const amount = parseMoney(document.getElementById("incomeAmount").value);
+            const source = document.getElementById("incomeSource").value.trim().toUpperCase();
+            const note = document.getElementById("incomeNote").value.trim();
+
+            if (!amount || amount <= 0) {
+                showAppModal("error", "Montant invalide", "Veuillez entrer un montant valide.");
+                return;
+            }
+
+            if (!source) {
+                showAppModal("error", "Source obligatoire", "Veuillez entrer une source.");
+                return;
+            }
+
+            if (!note) {
+                showAppModal("error", "Note vide", "La note automatique est vide. Vérifie le montant et la source.");
+                return;
+            }
+
+            const oldModal = document.getElementById("confirmIncomeModal");
+            if (oldModal) oldModal.remove();
+
+            document.body.insertAdjacentHTML("beforeend", `
+                <div class="custom-modal"
+                    id="confirmIncomeModal"
+                    onclick="closeConfirmCreateModal()">
+
+                    <div class="modal-box"
+                        onclick="event.stopPropagation()">
+
+                        <h2>Confirmer l’entrée</h2>
+
+                        <p>
+                            Vérifie bien avant d’enregistrer cette entrée.
+                        </p>
+
+                        <div class="final-message-preview">
+                            <p><strong>Montant :</strong> ${formatMoney(amount)}</p>
+                            <p><strong>Source :</strong> ${source}</p>
+                            <hr>
+                            <p><strong>Note :</strong> ${note}</p>
+                        </div>
+
+                        <div class="modal-actions">
+
+                            <button class="small-btn primary-small-btn"
+                                onclick="closeConfirmCreateModal()">
+                                Retour
+                            </button>
+
+                            <button class="small-btn success-btn"
+                                onclick="createIncome()">
+                                Enregistrer
+                            </button>
+
+                        </div>
+
+                    </div>
+                </div>
+            `);
+        }
+
+        function closeConfirmCreateModal() {
+            const modal = document.getElementById("confirmIncomeModal");
+            if (modal) modal.remove();
+        }
+
+        async function createIncome() {
+            const amount = parseMoney(document.getElementById("incomeAmount").value);
+            const source = document.getElementById("incomeSource").value.trim().toUpperCase();
+            const note = document.getElementById("incomeNote").value.trim();
+
+            if (!amount || amount <= 0) {
+                showAppModal("error", "Veuillez entrer un montant valide.");
+                return;
+            }
+
+            if (!source) {
+                showAppModal("error", "Veuillez entrer une source.");
+                return;
+            }
+
+            if (!note) {
+                showAppModal("error", "La note automatique est obligatoire.");
+                return;
+            }
+
+            try {
+                const res = await fetch(`${API_URL}/incomes/create`, {
+                    method: "POST",
+                    headers,
+                    body: JSON.stringify({
+                        amount,
+                        source,
+                        note
+                    })
+                });
+
+                const data = await res.json();
+
+                if (!data.success) {
+                    throw new Error(data.message);
+                }
+
+                closeConfirmCreateModal();
+                closeCreateModal();
+                loadIncomes();
+
+            } catch (error) {
+                showAppModal("error", "Création impossible", error.message || "Erreur création entrée");
+            }
+        }
+
+        function askDeleteIncome(id) {
+            document.body.insertAdjacentHTML("beforeend", `
+
+                <div class="custom-modal"
+                    id="deleteIncomeModal"
+                    onclick="closeDeleteModal()">
+
+                    <div class="modal-box"
+                        onclick="event.stopPropagation()">
+
+                        <h2>Supprimer entrée</h2>
+
+                        <p>
+                            Voulez-vous vraiment supprimer cette entrée ?
+                        </p>
+
+                        <div class="modal-actions">
+
+                            <button class="small-btn primary-small-btn"
+                                onclick="closeDeleteModal()">
+                                Annuler
+                            </button>
+
+                            <button class="small-btn danger-btn"
+                                onclick="deleteIncome(${id})">
+                                Supprimer
+                            </button>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            `);
+        }
+
+        function closeDeleteModal() {
+            const modal = document.getElementById("deleteIncomeModal");
+            if (modal) modal.remove();
+        }
+
+        async function deleteIncome(id) {
+            try {
+                const res = await fetch(`${API_URL}/incomes/${id}`, {
+                    method: "DELETE",
+                    headers
+                });
+
+                const data = await res.json();
+
+                if (!data.success) {
+                    throw new Error(data.message);
+                }
+
+                closeDeleteModal();
+                loadIncomes();
+
+            } catch (error) {
+                showAppModal("error", "Suppression impossible", error.message || "Erreur suppression");
+            }
+        }
+
+        function openDateModal() {
+            const oldModal = document.getElementById("dateModal");
+            if (oldModal) oldModal.remove();
+
+            document.body.insertAdjacentHTML("beforeend", `
+
+                <div class="custom-modal"
+                    id="dateModal"
+                    onclick="closeDateModal()">
+
+                    <div class="modal-box"
+                        onclick="event.stopPropagation()">
+
+                        <h2>📅 Filtrer par date</h2>
+
+                        <p>
+                            Choisis une date précise.
+                        </p>
+
+                        <label>Date voulue</label>
+
+                        <input type="date"
+                            id="singleDateInput"
+                            value="${selectedDateFilter}" />
+
+                        <div class="modal-actions">
+
+                            <button class="small-btn danger-btn"
+                                onclick="clearDateFilter()">
+                                Effacer
+                            </button>
+
+                            <button class="small-btn success-btn"
+                                onclick="applySingleDateFilter()">
+                                Appliquer
+                            </button>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            `);
+        }
+
+        function closeDateModal() {
+            const modal = document.getElementById("dateModal");
+            if (modal) modal.remove();
+        }
+
+        function applySingleDateFilter() {
+            selectedDateFilter =
+                document.getElementById("singleDateInput").value;
+
+            document.getElementById("selectedDateLabel").textContent =
+                selectedDateFilter
+                    ? new Date(selectedDateFilter).toLocaleDateString("fr-FR")
+                    : "Date";
+
+            closeDateModal();
+
+            applyFilters();
+        }
+
+        function clearDateFilter() {
+            selectedDateFilter = "";
+            document.getElementById("selectedDateLabel").textContent = "Date";
+            closeDateModal();
+            applyFilters();
+        }
+
+        loadIncomes();
+
+    </script>
+
+
+
+
+</body>
+
+
+</html>

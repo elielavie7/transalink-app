@@ -1,0 +1,1002 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Codes retour - TransaLink</title>
+    <script src="../js/auth-guard.js"></script>
+
+    <script>
+      (function () {
+        const theme = localStorage.getItem("transalink_theme");
+        const fontScale =
+          localStorage.getItem("transalink_font_scale") || "100";
+
+        document.documentElement.style.fontSize = fontScale + "%";
+
+        if (theme === "dark") {
+          document.documentElement.classList.add("dark-mode-preload");
+        }
+      })();
+    </script>
+    <link rel="stylesheet" href="../css/style.css" />
+  </head>
+
+  <body class="app-body">
+    <main class="mobile-app transaction-app">
+      <header class="app-header">
+        <button class="icon-btn" onclick="goBack()">←</button>
+        <div>
+          <h1>Codes retour</h1>
+          <p>Créer et suivre les libérations</p>
+        </div>
+        <button class="icon-btn" onclick="loadReturnCodes()">⟳</button>
+      </header>
+
+      <section class="requests-page">
+        <button
+          class="primary-btn"
+          onclick="openCreateModal()"
+          style="margin-bottom: 16px"
+        >
+          ➕ Nouveau code retour
+        </button>
+
+        <div class="filter-bar">
+          <input
+            type="text"
+            id="searchInput"
+            placeholder="Rechercher montant, numéro ou note..."
+            oninput="applyFilters()"
+          />
+
+          <select id="statusFilter" onchange="applyFilters()">
+            <option value="all">Tous statuts</option>
+            <option value="pending">En attente</option>
+            <option value="released">Libérés</option>
+            <option value="cancelled">Annulés</option>
+          </select>
+
+          <select id="periodFilter" onchange="applyFilters()">
+            <option value="today">Aujourd’hui</option>
+            <option value="week">Cette semaine</option>
+            <option value="month">Ce mois</option>
+            <option value="all">Tout</option>
+          </select>
+          <button
+            type="button"
+            class="calendar-filter-btn"
+            onclick="openDateModal()"
+          >
+            📅
+            <span id="selectedDateLabel">Date</span>
+          </button>
+        </div>
+
+        <div class="mini-summary" id="miniSummary"></div>
+
+        <div id="codesList" class="requests-list">
+          <p class="empty-text">Chargement...</p>
+        </div>
+
+        <div class="pagination-box" id="paginationBox"></div>
+      </section>
+    </main>
+    <script src="../js/config.js"></script>
+    <script src="../js/app-settings.js"></script>
+    <script src="../js/app-nav.js"></script>
+    <script>
+      const token = localStorage.getItem("transalink_token");
+      const user = JSON.parse(localStorage.getItem("transalink_user"));
+
+      if (!token || !user || user.role !== "agent") {
+        window.location.href = "../index.html";
+      }
+
+      const headers = {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      };
+
+      const codesList = document.getElementById("codesList");
+      const miniSummary = document.getElementById("miniSummary");
+      const paginationBox = document.getElementById("paginationBox");
+
+      let allCodes = [];
+      let filteredCodes = [];
+      let currentPage = 1;
+      const itemsPerPage = 10;
+
+      let mediaRecorder = null;
+      let audioChunks = [];
+      let returnCodeAudioBlob = null;
+      let audioStream = null;
+
+      function formatMoney(amount) {
+        return Number(amount || 0).toLocaleString("fr-FR") + " FC";
+      }
+      function showAppModal(type, title, message) {
+        const oldModal = document.getElementById("appModal");
+        if (oldModal) oldModal.remove();
+
+        const isSuccess = type === "success";
+
+        document.body.insertAdjacentHTML(
+          "beforeend",
+          `
+    <div class="custom-modal" id="appModal" onclick="closeAppModal()">
+      <div class="modal-box" onclick="event.stopPropagation()">
+        <h2>${isSuccess ? "✅" : "⚠️"} ${title}</h2>
+        <p>${message}</p>
+
+        <div class="modal-actions">
+          <button class="small-btn ${isSuccess ? "success-btn" : "danger-btn"}"
+                  onclick="closeAppModal()">
+            OK
+          </button>
+        </div>
+      </div>
+    </div>
+  `,
+        );
+      }
+
+      function closeAppModal() {
+        const modal = document.getElementById("appModal");
+        if (modal) modal.remove();
+      }
+
+      function parseMoney(value) {
+        return Number(String(value || "").replace(/\D/g, "")) || 0;
+      }
+
+      function formatInputMoney(input) {
+        const value = parseMoney(input.value);
+        input.value = value ? value.toLocaleString("fr-FR") : "";
+        updateReturnPreview();
+      }
+
+      function calculateReturnCode() {
+        const receivedAmount = parseMoney(
+          document.getElementById("receivedAmount")?.value,
+        );
+        const withdrawalFee = parseMoney(
+          document.getElementById("withdrawalFee")?.value,
+        );
+
+        const returnType =
+          document.getElementById("returnType")?.value || "normal";
+
+        const commission =
+          returnType === "military" ? 0 : Math.round(receivedAmount * 0.1);
+
+        const incomeAmount = Math.max(receivedAmount - withdrawalFee, 0);
+
+        const amountToRelease = Math.max(
+          receivedAmount - withdrawalFee - commission,
+          0,
+        );
+
+        return {
+          receivedAmount,
+          withdrawalFee,
+          commission,
+          incomeAmount,
+          amountToRelease,
+          returnType,
+        };
+      }
+      function updateReturnPreview() {
+        const box = document.getElementById("returnPreview");
+        if (!box) return;
+
+        const calc = calculateReturnCode();
+
+        box.innerHTML = `
+        <div class="final-message-preview">
+          <p><strong>Montant reçu :</strong> ${formatMoney(calc.receivedAmount)}</p>
+          <p><strong>Frais retrait :</strong> ${formatMoney(calc.withdrawalFee)}</p>
+         <p>
+  <strong>Type :</strong>
+  ${calc.returnType === "military" ? "Militaire" : "Client normal"}
+</p>
+
+<p>
+  <strong>
+    ${
+      calc.returnType === "military" ? "Commission militaire" : "Commission 10%"
+    }
+  :</strong>
+
+  ${formatMoney(calc.commission)}
+</p>
+          <hr>
+          <p><strong>Entrée caisse :</strong> ${formatMoney(calc.incomeAmount)}</p>
+          <p><strong>Montant à libérer :</strong> ${formatMoney(calc.amountToRelease)}</p>
+        </div>
+      `;
+      }
+
+      function formatDate(date) {
+        if (!date) return "-";
+        return new Date(date).toLocaleString("fr-FR", {
+          weekday: "short",
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+      }
+
+      function statusLabel(status) {
+        const labels = {
+          pending: "En attente",
+          released: "Libéré",
+          cancelled: "Annulé",
+          received: "Reçu",
+        };
+        return labels[status] || status;
+      }
+
+      function normalizeStatus(status) {
+        if (status === "received") return "pending";
+        return status;
+      }
+
+      function isSameDay(date1, date2) {
+        return (
+          date1.getFullYear() === date2.getFullYear() &&
+          date1.getMonth() === date2.getMonth() &&
+          date1.getDate() === date2.getDate()
+        );
+      }
+
+      function isSameWeek(date) {
+        const today = new Date();
+        const currentDay = today.getDay() || 7;
+
+        const monday = new Date(today);
+        monday.setDate(today.getDate() - currentDay + 1);
+        monday.setHours(0, 0, 0, 0);
+
+        const sunday = new Date(monday);
+        sunday.setDate(monday.getDate() + 6);
+        sunday.setHours(23, 59, 59, 999);
+
+        return date >= monday && date <= sunday;
+      }
+
+      function isSameMonth(date) {
+        const today = new Date();
+        return (
+          date.getFullYear() === today.getFullYear() &&
+          date.getMonth() === today.getMonth()
+        );
+      }
+      let selectedDateFilter = "";
+
+      function openDateModal() {
+        const oldModal = document.getElementById("dateModal");
+        if (oldModal) oldModal.remove();
+
+        document.body.insertAdjacentHTML(
+          "beforeend",
+          `
+        <div class="custom-modal" id="dateModal" onclick="closeDateModal()">
+            <div class="modal-box" onclick="event.stopPropagation()">
+                <h2>📅 Filtrer par date</h2>
+                <p>Choisis une date précise pour afficher seulement les codes de ce jour.</p>
+
+                <label>Date voulue</label>
+                <input type="date" id="singleDateInput" value="${selectedDateFilter}" />
+
+                <div class="modal-actions">
+                    <button class="small-btn danger-btn" onclick="clearDateFilter()">Effacer</button>
+                    <button class="small-btn success-btn" onclick="applySingleDateFilter()">Appliquer</button>
+                </div>
+            </div>
+        </div>
+    `,
+        );
+      }
+
+      function closeDateModal() {
+        const modal = document.getElementById("dateModal");
+        if (modal) modal.remove();
+      }
+
+      function applySingleDateFilter() {
+        selectedDateFilter = document.getElementById("singleDateInput").value;
+
+        document.getElementById("selectedDateLabel").textContent =
+          selectedDateFilter
+            ? new Date(selectedDateFilter).toLocaleDateString("fr-FR")
+            : "Date";
+
+        closeDateModal();
+        applyFilters();
+      }
+
+      function clearDateFilter() {
+        selectedDateFilter = "";
+        document.getElementById("selectedDateLabel").textContent = "Date";
+        closeDateModal();
+        applyFilters();
+      }
+
+      function isSelectedDate(date) {
+        if (!selectedDateFilter) return true;
+
+        const selected = new Date(selectedDateFilter);
+        const target = new Date(date);
+
+        return (
+          selected.getFullYear() === target.getFullYear() &&
+          selected.getMonth() === target.getMonth() &&
+          selected.getDate() === target.getDate()
+        );
+      }
+
+      function getPeriodTitle(period) {
+        const titles = {
+          today: "Codes retour d’aujourd’hui",
+          week: "Codes retour de cette semaine",
+          month: "Codes retour de ce mois",
+          all: "Tous les codes retour",
+        };
+        return titles[period] || "Codes retour";
+      }
+      async function markReleasedNotificationsRead() {
+        const agencyId = localStorage.getItem("selected_agency_id");
+        if (!agencyId) return;
+
+        try {
+          await fetch(`${API_URL}/notifications/read-types`, {
+            method: "PUT",
+            headers: {
+              ...headers,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              agency_id: agencyId,
+              types: ["return_code_released"],
+            }),
+          });
+        } catch (err) {
+          console.error(err);
+        }
+      }
+
+      async function loadReturnCodes() {
+        codesList.innerHTML = `<p class="empty-text">Chargement...</p>`;
+        miniSummary.innerHTML = "";
+        paginationBox.innerHTML = "";
+
+        try {
+          const res = await fetch(`${API_URL}/return-codes`, { headers });
+          const data = await res.json();
+
+          if (!data.success) {
+            codesList.innerHTML = `<p class="error">${data.message || "Erreur récupération"}</p>`;
+            return;
+          }
+
+          allCodes = (data.data || [])
+            .map((c) => ({ ...c, status: normalizeStatus(c.status) }))
+            .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+          applyFilters();
+          await markReleasedNotificationsRead();
+        } catch (error) {
+          console.error("ERREUR COMPLETE :", error);
+
+          alert(error.message);
+
+          codesList.innerHTML = `
+        <p class="error">
+            Serveur indisponible
+        </p>
+    `;
+        }
+      }
+
+      function applyFilters() {
+        const search = document
+          .getElementById("searchInput")
+          .value.toLowerCase()
+          .trim();
+        const status = document.getElementById("statusFilter").value;
+        const period = document.getElementById("periodFilter").value;
+        const today = new Date();
+
+        filteredCodes = allCodes.filter((c) => {
+          const createdAt = new Date(c.created_at);
+          const matchStatus = status === "all" || c.status === status;
+
+          const matchSearch =
+            !search ||
+            String(c.amount || "")
+              .toLowerCase()
+              .includes(search) ||
+            String(c.income_amount || "")
+              .toLowerCase()
+              .includes(search) ||
+            String(c.sender_number || "")
+              .toLowerCase()
+              .includes(search) ||
+            String(c.note || "")
+              .toLowerCase()
+              .includes(search) ||
+            String(c.assigned_name || "")
+              .toLowerCase()
+              .includes(search);
+
+          let matchPeriod = true;
+
+          if (selectedDateFilter) {
+            matchPeriod = isSelectedDate(createdAt);
+          } else {
+            if (period === "today") matchPeriod = isSameDay(createdAt, today);
+            if (period === "week") matchPeriod = isSameWeek(createdAt);
+            if (period === "month") matchPeriod = isSameMonth(createdAt);
+          }
+
+          return matchStatus && matchSearch && matchPeriod;
+        });
+
+        currentPage = 1;
+        renderCodes();
+      }
+
+      function renderSummary() {
+        const period = document.getElementById("periodFilter").value;
+
+        const validCodes = filteredCodes.filter(
+          (c) => c.status === "pending" || c.status === "released",
+        );
+
+        const totalToRelease = validCodes.reduce(
+          (sum, c) => sum + Number(c.amount || 0),
+          0,
+        );
+        const totalIncome = validCodes.reduce(
+          (sum, c) => sum + Number(c.income_amount || 0),
+          0,
+        );
+
+        const pendingCount = filteredCodes.filter(
+          (c) => c.status === "pending",
+        ).length;
+        const releasedCount = filteredCodes.filter(
+          (c) => c.status === "released",
+        ).length;
+        const cancelledCount = filteredCodes.filter(
+          (c) => c.status === "cancelled",
+        ).length;
+
+        miniSummary.innerHTML = `
+    <div class="summary-line">
+      <strong>${getPeriodTitle(period)}</strong>
+      <span>
+        ${filteredCodes.length} code(s) •
+        À libérer : ${formatMoney(totalToRelease)} •
+        Entrée : ${formatMoney(totalIncome)} •
+        ${pendingCount} en attente •
+        ${releasedCount} libéré(s) •
+        ${cancelledCount} annulé(s)
+      </span>
+    </div>
+  `;
+      }
+      function renderCodes() {
+        renderSummary();
+
+        if (!filteredCodes || filteredCodes.length === 0) {
+          codesList.innerHTML = `<p class="empty-text">Aucun code retour trouvé pour cette période.</p>`;
+          paginationBox.innerHTML = "";
+          return;
+        }
+
+        const start = (currentPage - 1) * itemsPerPage;
+        const end = start + itemsPerPage;
+        const pageItems = filteredCodes.slice(start, end);
+
+        codesList.innerHTML = pageItems
+          .map(
+            (c) => `
+        <article class="request-card compact-request-card return-code-card">
+          <div class="request-top">
+            <div>
+              <h3>${formatMoney(c.amount)}</h3>
+              <p>À libérer</p>
+            </div>
+            <span class="status-pill ${c.status}">${statusLabel(c.status)}</span>
+          </div>
+
+          <div class="request-info compact-info">
+            <p><strong>Entrée caisse :</strong> ${formatMoney(c.income_amount)}</p>
+            ${c.sender_number ? `<p><strong>Numéro :</strong> ${c.sender_number}</p>` : ""}
+            ${c.note ? `<p><strong>Note :</strong> ${c.note}</p>` : ""}
+            <p><strong>Terrain :</strong> ${c.assigned_name || "Non défini"}</p>
+            <p><strong>Date :</strong> ${formatDate(c.created_at)}</p>
+            ${c.released_at ? `<p><strong>Libéré le :</strong> ${formatDate(c.released_at)}</p>` : ""}
+          </div>
+
+          ${
+            c.audio_url
+              ? `
+            <div class="audio-player-box agent-audio-box">
+              <div>
+                <strong>🎧 Audio code retour</strong>
+                <small>Audio lié à ce code</small>
+              </div>
+              <audio controls src="${BASE_URL}${c.audio_url}"></audio>
+            </div>
+          `
+              : ""
+          }
+
+          <div class="request-actions">
+            ${
+              c.status === "pending"
+                ? `
+              <button class="small-btn danger-btn" onclick="confirmCancelCode(${c.id})">Annuler</button>
+            `
+                : `<span class="final-status">${statusLabel(c.status)}</span>`
+            }
+          </div>
+        </article>
+      `,
+          )
+          .join("");
+
+        renderPagination();
+      }
+
+      function renderPagination() {
+        const totalPages = Math.ceil(filteredCodes.length / itemsPerPage);
+
+        if (totalPages <= 1) {
+          paginationBox.innerHTML = "";
+          return;
+        }
+
+        paginationBox.innerHTML = `
+        <button class="small-btn" onclick="prevPage()" ${currentPage === 1 ? "disabled" : ""}>← Précédent</button>
+        <span>Page ${currentPage} / ${totalPages}</span>
+        <button class="small-btn" onclick="nextPage()" ${currentPage === totalPages ? "disabled" : ""}>Suivant →</button>
+      `;
+      }
+
+      function prevPage() {
+        if (currentPage > 1) {
+          currentPage--;
+          renderCodes();
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }
+      }
+
+      function nextPage() {
+        const totalPages = Math.ceil(filteredCodes.length / itemsPerPage);
+        if (currentPage < totalPages) {
+          currentPage++;
+          renderCodes();
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }
+      }
+
+      function openCreateModal() {
+        resetReturnAudio();
+
+        document.body.insertAdjacentHTML(
+          "beforeend",
+          `
+        <div class="custom-modal" id="createCodeModal" onclick="closeCreateModal()">
+          <div class="modal-box" onclick="event.stopPropagation()">
+            <h2>➕ Nouveau code retour</h2>
+            <p>Entre le montant reçu et les frais. L’app calcule automatiquement le montant à libérer.</p>
+
+            <label>Montant reçu au téléphone</label>
+            <input id="receivedAmount" type="text" placeholder="Ex : 150.000" oninput="formatInputMoney(this)" />
+
+            <label>Frais retrait réseau</label>
+            <input id="withdrawalFee" type="text" placeholder="Ex : 5.000" oninput="formatInputMoney(this)" />
+<label>Type de code retour</label>
+
+<select id="returnType" onchange="updateReturnPreview()">
+    <option value="normal">Client normal</option>
+    <option value="military">Militaire</option>
+</select>
+            <label>Numéro expéditeur</label>
+            <input id="senderNumber" placeholder="Ex : 0819443728, 0992001508" />
+
+            <label>Note optionnelle</label>
+            <textarea id="note" placeholder="Ex : Code retour reçu via numéro agent"></textarea>
+
+            <div id="returnPreview"></div>
+
+            ${audioRecorderHTML()}
+
+            <div class="modal-actions">
+              <button class="small-btn danger-btn" onclick="closeCreateModal()">Annuler</button>
+              <button class="small-btn success-btn" onclick="openConfirmCreateModal()">Continuer</button>
+            </div>
+          </div>
+        </div>
+      `,
+        );
+
+        updateReturnPreview();
+        bindReturnAudioButtons();
+      }
+
+      function openConfirmCreateModal() {
+        const calc = calculateReturnCode();
+
+        if (!calc.receivedAmount || calc.receivedAmount <= 0) {
+          showAppModal(
+            "error",
+            "Montant obligatoire",
+            "Le montant reçu est obligatoire.",
+          );
+          return;
+        }
+
+        if (calc.withdrawalFee < 0) {
+          showAppModal(
+            "error",
+            "Frais invalide",
+            "Les frais de retrait sont invalides.",
+          );
+          return;
+        }
+
+        if (calc.amountToRelease <= 0) {
+          showAppModal(
+            "error",
+            "Montant invalide",
+            "Le montant à libérer est invalide. Vérifie le montant reçu et les frais.",
+          );
+          return;
+        }
+
+        if (!returnCodeAudioBlob) {
+          showAppModal(
+            "error",
+            "Audio obligatoire",
+            "Enregistre l’audio du code retour avant de continuer.",
+          );
+          return;
+        }
+
+        document.body.insertAdjacentHTML(
+          "beforeend",
+          `
+        <div class="custom-modal" id="confirmCreateCodeModal" onclick="closeConfirmCreateModal()">
+          <div class="modal-box" onclick="event.stopPropagation()">
+            <h2>Confirmer le code retour</h2>
+            <p>Vérifie bien avant de créer pour éviter les pertes.</p>
+
+            <div class="final-message-preview">
+              <p><strong>Montant reçu :</strong> ${formatMoney(calc.receivedAmount)}</p>
+              <p><strong>Frais retrait :</strong> ${formatMoney(calc.withdrawalFee)}</p>
+             <p>
+  <strong>Type :</strong>
+  ${calc.returnType === "military" ? "Militaire" : "Client normal"}
+</p>
+
+<p>
+  <strong>
+    ${
+      calc.returnType === "military" ? "Commission militaire" : "Commission 10%"
+    }
+  :</strong>
+
+  ${formatMoney(calc.commission)}
+</p>
+              <hr>
+              <p><strong>Entrée caisse :</strong> ${formatMoney(calc.incomeAmount)}</p>
+              <p><strong>Montant à libérer :</strong> ${formatMoney(calc.amountToRelease)}</p>
+            </div>
+
+            <div class="modal-actions">
+              <button class="small-btn primary-small-btn" onclick="closeConfirmCreateModal()">Retour</button>
+              <button class="small-btn success-btn" onclick="createReturnCode()">Créer maintenant</button>
+            </div>
+          </div>
+        </div>
+      `,
+        );
+      }
+
+      function closeConfirmCreateModal() {
+        const modal = document.getElementById("confirmCreateCodeModal");
+        if (modal) modal.remove();
+      }
+
+      function closeCreateModal() {
+        resetReturnAudio();
+        const modal = document.getElementById("createCodeModal");
+        if (modal) modal.remove();
+      }
+
+      function audioRecorderHTML() {
+        return `
+        <div class="audio-card modal-audio-card">
+          <div class="audio-head">
+            <div>
+              <h3>🎙️ Audio code retour</h3>
+              <p>Explique le code reçu et le montant à libérer.</p>
+            </div>
+            <span id="returnAudioStatus">Aucun audio</span>
+          </div>
+
+          <div class="voice-wave" id="returnVoiceWave">
+            <span></span><span></span><span></span><span></span><span></span>
+          </div>
+
+          <div class="audio-actions">
+            <button type="button" class="small-btn primary-small-btn" id="returnStartRecordBtn">🎙️ Démarrer</button>
+            <button type="button" class="small-btn danger-btn" id="returnStopRecordBtn" disabled>⏹️ Arrêter</button>
+            <button type="button" class="small-btn danger-btn" id="returnDeleteAudioBtn" disabled>🗑️ Supprimer</button>
+          </div>
+
+          <audio id="returnAudioPreview" controls style="display:none;"></audio>
+        </div>
+      `;
+      }
+
+      function bindReturnAudioButtons() {
+        document
+          .getElementById("returnStartRecordBtn")
+          .addEventListener("click", startReturnRecording);
+        document
+          .getElementById("returnStopRecordBtn")
+          .addEventListener("click", stopReturnRecording);
+        document
+          .getElementById("returnDeleteAudioBtn")
+          .addEventListener("click", deleteReturnAudio);
+      }
+
+      async function startReturnRecording() {
+        try {
+          audioStream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+          });
+
+          mediaRecorder = new MediaRecorder(audioStream);
+          audioChunks = [];
+
+          mediaRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0) audioChunks.push(event.data);
+          };
+
+          mediaRecorder.onstop = () => {
+            returnCodeAudioBlob = new Blob(audioChunks, { type: "audio/webm" });
+            const audioUrl = URL.createObjectURL(returnCodeAudioBlob);
+
+            const preview = document.getElementById("returnAudioPreview");
+            preview.src = audioUrl;
+            preview.style.display = "block";
+
+            const status = document.getElementById("returnAudioStatus");
+            status.textContent = "Audio prêt";
+            status.className = "audio-ready";
+
+            document.getElementById("returnVoiceWave").classList.remove("show");
+            document.getElementById("returnStartRecordBtn").disabled = false;
+            document.getElementById("returnStopRecordBtn").disabled = true;
+            document.getElementById("returnDeleteAudioBtn").disabled = false;
+
+            if (audioStream) {
+              audioStream.getTracks().forEach((track) => track.stop());
+            }
+          };
+
+          mediaRecorder.start();
+
+          const status = document.getElementById("returnAudioStatus");
+          status.textContent = "Enregistrement...";
+          status.className = "audio-recording";
+
+          document.getElementById("returnVoiceWave").classList.add("show");
+          document.getElementById("returnStartRecordBtn").disabled = true;
+          document.getElementById("returnStopRecordBtn").disabled = false;
+          document.getElementById("returnDeleteAudioBtn").disabled = true;
+        } catch (error) {
+          showAppModal(
+            "error",
+            "Micro indisponible",
+            "Micro non autorisé ou indisponible.",
+          );
+        }
+      }
+
+      function stopReturnRecording() {
+        if (mediaRecorder && mediaRecorder.state === "recording") {
+          mediaRecorder.stop();
+        }
+      }
+
+      function deleteReturnAudio() {
+        resetReturnAudio();
+
+        const preview = document.getElementById("returnAudioPreview");
+        const status = document.getElementById("returnAudioStatus");
+        const wave = document.getElementById("returnVoiceWave");
+
+        if (preview) {
+          preview.src = "";
+          preview.style.display = "none";
+        }
+
+        if (status) {
+          status.textContent = "Aucun audio";
+          status.className = "";
+        }
+
+        if (wave) wave.classList.remove("show");
+
+        const deleteBtn = document.getElementById("returnDeleteAudioBtn");
+        if (deleteBtn) deleteBtn.disabled = true;
+      }
+
+      function resetReturnAudio() {
+        returnCodeAudioBlob = null;
+        audioChunks = [];
+
+        if (audioStream) {
+          audioStream.getTracks().forEach((track) => track.stop());
+          audioStream = null;
+        }
+      }
+
+      async function uploadReturnCodeAudio(codeId) {
+        if (!returnCodeAudioBlob) return;
+
+        const formData = new FormData();
+        formData.append(
+          "audio",
+          returnCodeAudioBlob,
+          `return-code-${codeId}.webm`,
+        );
+
+        const res = await fetch(`${API_URL}/return-codes/audio/${codeId}`, {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          body: formData,
+        });
+
+        const data = await res.json();
+
+        if (!data.success) {
+          throw new Error(data.message || "Erreur upload audio code retour");
+        }
+      }
+
+      async function createReturnCode() {
+        const calc = calculateReturnCode();
+        const sender_number = document
+          .getElementById("senderNumber")
+          .value.trim();
+        const note = document.getElementById("note").value.trim();
+        const returnTypeLabel =
+          calc.returnType === "military" ? "Militaire" : "Client normal";
+
+        const finalNote = note
+          ? `${note} | Type : ${returnTypeLabel}`
+          : `Type : ${returnTypeLabel}`;
+
+        if (!returnCodeAudioBlob) {
+          showAppModal(
+            "error",
+            "Audio obligatoire",
+            "Enregistre l’audio avant de créer le code retour.",
+          );
+          return;
+        }
+
+        try {
+          const res = await fetch(`${API_URL}/return-codes/create`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              amount: calc.amountToRelease,
+              income_amount: calc.incomeAmount,
+              sender_number,
+              note: finalNote,
+            }),
+          });
+
+          const data = await res.json();
+
+          if (!data.success) {
+            showAppModal(
+              "error",
+              "Création impossible",
+              data.message || "Erreur création code retour.",
+            );
+            return;
+          }
+
+          if (data.data && data.data.id) {
+            await uploadReturnCodeAudio(data.data.id);
+          }
+
+          closeConfirmCreateModal();
+          closeCreateModal();
+          resetReturnAudio();
+          loadReturnCodes();
+        } catch (error) {
+          showAppModal(
+            "error",
+            "Serveur indisponible",
+            "Impossible de contacter le serveur.",
+          );
+        }
+      }
+
+      function confirmCancelCode(id) {
+        document.body.insertAdjacentHTML(
+          "beforeend",
+          `
+        <div class="custom-modal" id="cancelCodeModal" onclick="closeCancelCodeModal()">
+          <div class="modal-box" onclick="event.stopPropagation()">
+            <h2>Annuler ce code ?</h2>
+            <p>Cette action est possible seulement si le code est encore en attente.</p>
+
+            <div class="modal-actions">
+              <button class="small-btn primary-small-btn" onclick="closeCancelCodeModal()">Non</button>
+              <button class="small-btn danger-btn" onclick="cancelCode(${id})">Oui, annuler</button>
+            </div>
+          </div>
+        </div>
+      `,
+        );
+      }
+
+      function closeCancelCodeModal() {
+        const modal = document.getElementById("cancelCodeModal");
+        if (modal) modal.remove();
+      }
+
+      async function cancelCode(id) {
+        try {
+          const res = await fetch(`${API_URL}/return-codes/cancel/${id}`, {
+            method: "PUT",
+            headers,
+          });
+
+          const data = await res.json();
+
+          if (!data.success) {
+            showAppModal(
+              "error",
+              "Annulation impossible",
+              data.message || "Erreur annulation.",
+            );
+            return;
+          }
+
+          closeCancelCodeModal();
+          loadReturnCodes();
+        } catch (error) {
+          showAppModal(
+            "error",
+            "Erreur",
+            error.message || "Serveur indisponible.",
+          );
+        }
+      }
+
+      function goBack() {
+        window.location.href = "dashboard.html";
+      }
+
+      loadReturnCodes();
+    </script>
+  </body>
+</html>

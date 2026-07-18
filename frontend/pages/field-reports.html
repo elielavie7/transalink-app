@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rapports frère - TransaLink</title>
+  <script src="../js/auth-guard.js"></script>
+
+  <script>
+    (function () {
+      const theme = localStorage.getItem("transalink_theme");
+      const fontScale = localStorage.getItem("transalink_font_scale") || "100";
+
+      document.documentElement.style.fontSize = fontScale + "%";
+
+      if (theme === "dark") {
+        document.documentElement.classList.add("dark-mode-preload");
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="../css/style.css" />
+</head>
+
+<body class="app-body">
+  <main class="mobile-app transaction-app">
+    <header class="app-header">
+      <button class="icon-btn" onclick="goBack()">←</button>
+      <div>
+        <h1>Rapports frère</h1>
+        <p>Suivi des écarts terrain</p>
+      </div>
+      <button class="icon-btn" onclick="loadReports()">⟳</button>
+    </header>
+
+    <section class="requests-page">
+      <div class="filter-bar">
+        <input type="text" id="searchInput" placeholder="Rechercher nom, note..." oninput="applyFilters()" />
+
+        <select id="statusFilter" onchange="applyFilters()">
+          <option value="all">Tous statuts</option>
+          <option value="balanced">Équilibrés</option>
+          <option value="difference_detected">Avec écart</option>
+        </select>
+
+        <button type="button" class="calendar-filter-btn" onclick="openDateModal()">
+          📅 <span id="selectedDateLabel">Date</span>
+        </button>
+      </div>
+
+      <div class="mini-summary" id="reportsSummary"></div>
+
+      <div class="requests-list" id="reportsList">
+        <p class="empty-text">Chargement...</p>
+      </div>
+    </section>
+  </main>
+  <script src="../js/config.js"></script>
+
+  <script src="../js/app-settings.js"></script>
+  <script src="../js/app-nav.js"></script>
+  <script>
+
+    const token = localStorage.getItem("transalink_token");
+    const user = JSON.parse(localStorage.getItem("transalink_user"));
+
+    if (!token || !user || user.role !== "agent") {
+      window.location.href = "../index.html";
+    }
+
+    const headers = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    };
+
+    let reports = [];
+    let filteredReports = [];
+    let selectedDateFilter = "";
+
+    function goBack() {
+      window.location.href = "dashboard.html";
+    }
+
+    function formatMoney(amount) {
+      return Number(amount || 0).toLocaleString("fr-FR") + " FC";
+    }
+
+    function formatDate(date) {
+      if (!date) return "-";
+      return new Date(date).toLocaleString("fr-FR", {
+        weekday: "short",
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    }
+
+    function formatPeriod(start, end) {
+      return `${new Date(start).toLocaleDateString("fr-FR")} au ${new Date(end).toLocaleDateString("fr-FR")}`;
+    }
+
+    function statusLabel(status) {
+      return status === "balanced" ? "Équilibré" : "Écart détecté";
+    }
+
+    function isSelectedDate(date) {
+      if (!selectedDateFilter) return true;
+
+      const selected = new Date(selectedDateFilter);
+      const target = new Date(date);
+
+      return selected.getFullYear() === target.getFullYear() &&
+        selected.getMonth() === target.getMonth() &&
+        selected.getDate() === target.getDate();
+    }
+
+    async function loadReports() {
+      reportsList.innerHTML = `<p class="empty-text">Chargement...</p>`;
+       const agencyId = localStorage.getItem("selected_agency_id");
+
+      try {
+        const res = await fetch(
+`${API_URL}/field-reports?agency_id=${agencyId}`,
+{ headers }
+);
+        const data = await res.json();
+
+        if (!data.success) {
+          reportsList.innerHTML = `<p class="error">${data.message || "Erreur récupération"}</p>`;
+          return;
+        }
+
+        reports = data.reports || [];
+        applyFilters();
+
+      } catch (error) {
+        reportsList.innerHTML = `<p class="error">Serveur indisponible</p>`;
+      }
+    }
+
+    function applyFilters() {
+      const search = document.getElementById("searchInput").value.toLowerCase().trim();
+      const status = document.getElementById("statusFilter").value;
+
+      filteredReports = reports.filter(r => {
+        const matchStatus = status === "all" || r.status === status;
+
+        const matchSearch =
+          !search ||
+          String(r.user_name || "").toLowerCase().includes(search) ||
+          String(r.note || "").toLowerCase().includes(search) ||
+          String(r.system_balance || "").includes(search) ||
+          String(r.declared_balance || "").includes(search);
+
+        const matchDate = isSelectedDate(r.created_at);
+
+        return matchStatus && matchSearch && matchDate;
+      });
+
+      renderReports();
+    }
+
+    function renderSummary() {
+      const total = filteredReports.length;
+      const balanced = filteredReports.filter(r => r.status === "balanced").length;
+      const diff = filteredReports.filter(r => r.status === "difference_detected").length;
+
+      reportsSummary.innerHTML = `
+        <div class="summary-line">
+          <strong>Rapports terrain</strong>
+          <span>${total} rapport(s) • ${balanced} équilibré(s) • ${diff} avec écart</span>
+        </div>
+      `;
+    }
+
+    function renderReports() {
+      renderSummary();
+
+      if (filteredReports.length === 0) {
+        reportsList.innerHTML = `<p class="empty-text">Aucun rapport trouvé.</p>`;
+        return;
+      }
+
+      reportsList.innerHTML = filteredReports.map(r => {
+        const difference = Number(r.difference || 0);
+        const isBalanced = difference === 0;
+
+        return `
+          <article class="request-card compact-request-card ${isBalanced ? "" : "expense-card"}">
+            <div class="request-top">
+              <div>
+                <h3>${formatMoney(r.declared_balance)}</h3>
+                <p>Déclaré par ${r.user_name || "Terrain"}</p>
+              </div>
+              <span class="status-pill ${isBalanced ? "sent" : "rejected"}">
+                ${statusLabel(r.status)}
+              </span>
+            </div>
+
+            <div class="request-info compact-info">
+              <p><strong>Période :</strong> ${formatPeriod(r.week_start, r.week_end)}</p>
+              <p><strong>Reste système :</strong> ${formatMoney(r.system_balance)}</p>
+              <p><strong>Montant déclaré :</strong> ${formatMoney(r.declared_balance)}</p>
+              <p class="${isBalanced ? "success" : "error"}">
+                <strong>Écart :</strong> ${formatMoney(difference)}
+              </p>
+              ${r.note ? `<p><strong>Note :</strong> ${r.note}</p>` : ""}
+              <p><strong>Soumis le :</strong> ${formatDate(r.created_at)}</p>
+            </div>
+          </article>
+        `;
+      }).join("");
+    }
+
+    function openDateModal() {
+      const oldModal = document.getElementById("dateModal");
+      if (oldModal) oldModal.remove();
+
+      document.body.insertAdjacentHTML("beforeend", `
+        <div class="custom-modal" id="dateModal" onclick="closeDateModal()">
+          <div class="modal-box" onclick="event.stopPropagation()">
+            <h2>📅 Filtrer par date</h2>
+            <p>Choisis la date de soumission du rapport.</p>
+
+            <label>Date voulue</label>
+            <input type="date" id="singleDateInput" value="${selectedDateFilter}" />
+
+            <div class="modal-actions">
+              <button class="small-btn danger-btn" onclick="clearDateFilter()">Effacer</button>
+              <button class="small-btn success-btn" onclick="applySingleDateFilter()">Appliquer</button>
+            </div>
+          </div>
+        </div>
+      `);
+    }
+
+    function closeDateModal() {
+      const modal = document.getElementById("dateModal");
+      if (modal) modal.remove();
+    }
+
+    function applySingleDateFilter() {
+      selectedDateFilter = document.getElementById("singleDateInput").value;
+
+      document.getElementById("selectedDateLabel").textContent = selectedDateFilter
+        ? new Date(selectedDateFilter).toLocaleDateString("fr-FR")
+        : "Date";
+
+      closeDateModal();
+      applyFilters();
+    }
+
+    function clearDateFilter() {
+      selectedDateFilter = "";
+      document.getElementById("selectedDateLabel").textContent = "Date";
+      closeDateModal();
+      applyFilters();
+    }
+
+    loadReports();
+  </script>
+
+
+
+</body>
+
+</html>
