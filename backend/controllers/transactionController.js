@@ -590,14 +590,7 @@ exports.markTransactionSent = async (req, res) => {
 exports.uploadTransactionAudio = async (req, res) => {
   try {
     const { id } = req.params;
-    const { audio_type, agency_id } = req.body;
-
-    if (!agency_id) {
-      return res.status(400).json({
-        success: false,
-        message: "Aucune agence sélectionnée.",
-      });
-    }
+    const { audio_type } = req.body;
 
     if (!req.file) {
       return res.status(400).json({
@@ -613,26 +606,47 @@ exports.uploadTransactionAudio = async (req, res) => {
       });
     }
 
-    const column =
-      audio_type === "terrain" ? "terrain_audio_url" : "agent_audio_url";
-    const audioUrl = `/uploads/audios/${req.file.filename}`;
-
-    const result = await pool.query(
+    const transactionResult = await pool.query(
       `
-UPDATE transactions
-SET ${column}=$1
-WHERE id=$2
-AND agency_id=$3
-RETURNING *
-`,
-      [audioUrl, id, agency_id],
+      SELECT id, agency_id
+      FROM transactions
+      WHERE id = $1
+      `,
+      [id],
     );
-    if (result.rows.length === 0) {
+
+    if (transactionResult.rows.length === 0) {
       return res.status(404).json({
         success: false,
         message: "Transaction introuvable.",
       });
     }
+
+    const transaction = transactionResult.rows[0];
+
+    if (!transaction.agency_id) {
+      return res.status(400).json({
+        success: false,
+        message: "Cette transaction n’est associée à aucune agence.",
+      });
+    }
+
+    const column =
+      audio_type === "terrain"
+        ? "terrain_audio_url"
+        : "agent_audio_url";
+
+    const audioUrl = `/uploads/audios/${req.file.filename}`;
+
+    const result = await pool.query(
+      `
+      UPDATE transactions
+      SET ${column} = $1
+      WHERE id = $2
+      RETURNING *
+      `,
+      [audioUrl, id],
+    );
 
     res.json({
       success: true,
@@ -641,6 +655,8 @@ RETURNING *
       transaction: result.rows[0],
     });
   } catch (error) {
+    console.error("Erreur upload audio transaction :", error);
+
     res.status(500).json({
       success: false,
       message: "Erreur enregistrement audio",
