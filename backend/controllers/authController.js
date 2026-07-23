@@ -50,7 +50,7 @@ WHERE u.name = $1
       },
       process.env.JWT_SECRET,
       {
-        expiresIn: "7d",
+        expiresIn: "20s",
       },
     );
 
