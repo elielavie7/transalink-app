@@ -10,6 +10,24 @@
     user = null;
   }
 
+  function logout() {
+    localStorage.removeItem("transalink_token");
+    localStorage.removeItem("transalink_user");
+    localStorage.removeItem("selected_agency_id");
+
+    window.location.replace("/");
+  }
+
+  function isTokenExpired(jwtToken) {
+    try {
+      const payload = JSON.parse(atob(jwtToken.split(".")[1]));
+
+      return Date.now() >= payload.exp * 1000;
+    } catch {
+      return true;
+    }
+  }
+
   const path = window.location.pathname;
   const page = path.split("/").pop() || "index.html";
   const isLoginPage = page === "index.html" || path === "/";
@@ -35,18 +53,18 @@
     "settings.html",
     "terrain-incomes.html",
     "terrain-expenses.html",
-   
   ];
 
   if (isLoginPage) {
-    if (token && user) {
+    if (token && user && !isTokenExpired(token)) {
       window.location.replace("/pages/dashboard.html");
     }
+
     return;
   }
 
-  if (!token || !user || !user.role) {
-    window.location.replace("/");
+  if (!token || !user || !user.role || isTokenExpired(token)) {
+    logout();
     return;
   }
 
@@ -54,6 +72,5 @@
 
   if (!allowedPages.includes(page)) {
     window.location.replace("/pages/dashboard.html");
-    return;
   }
 })();
