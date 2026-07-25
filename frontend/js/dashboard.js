@@ -467,9 +467,7 @@ async function loadNotificationsCount() {
       ).length;
 
       shortcuts.agent[1].badge = unreadNotifications.filter((n) =>
-        [
-          "return_code_released",
-        ].includes(n.type),
+        ["return_code_released"].includes(n.type),
       ).length;
 
       shortcuts.agent[5].badge = unreadNotifications.filter(
@@ -478,22 +476,22 @@ async function loadNotificationsCount() {
     }
 
     if (user.role === "terrain") {
-  shortcuts.terrain[1].badge = unreadNotifications.filter((n) =>
-    ["transaction_sent", "transaction_rejected"].includes(n.type),
-  ).length;
+      shortcuts.terrain[1].badge = unreadNotifications.filter((n) =>
+        ["transaction_sent", "transaction_rejected"].includes(n.type),
+      ).length;
 
-  shortcuts.terrain[2].badge = unreadNotifications.filter((n) =>
-    ["return_code_created", "return_code_cancelled"].includes(n.type),
-  ).length;
+      shortcuts.terrain[2].badge = unreadNotifications.filter((n) =>
+        ["return_code_created", "return_code_cancelled"].includes(n.type),
+      ).length;
 
-  shortcuts.terrain[3].badge = unreadNotifications.filter((n) =>
-    ["income", "income_deleted"].includes(n.type),
-  ).length;
+      shortcuts.terrain[3].badge = unreadNotifications.filter((n) =>
+        ["income", "income_deleted"].includes(n.type),
+      ).length;
 
-  shortcuts.terrain[4].badge = unreadNotifications.filter((n) =>
-    ["expense", "expense_deleted"].includes(n.type),
-  ).length;
-}
+      shortcuts.terrain[4].badge = unreadNotifications.filter((n) =>
+        ["expense", "expense_deleted"].includes(n.type),
+      ).length;
+    }
     if (count > lastUnreadCount) {
       playNotificationSound();
 
@@ -583,10 +581,13 @@ function closeNotifications() {
 
 async function markAllNotificationsRead() {
   try {
-    await fetch(`${API_URL}/notifications/read-all`, {
-      method: "PUT",
-      headers,
-    });
+    await fetch(
+      `${API_URL}/notifications/read-all?agency_id=${selectedAgencyId}`,
+      {
+        method: "PUT",
+        headers,
+      },
+    );
 
     closeNotifications();
     lastUnreadCount = 0;
