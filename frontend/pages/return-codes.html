@@ -348,7 +348,7 @@
         return titles[period] || "Codes retour";
       }
       async function markReleasedNotificationsRead() {
-        const agencyId = localStorage.getItem("selected_agency_id");
+        const agencyId = user.agency_id;
         if (!agencyId) return;
 
         try {
@@ -364,7 +364,10 @@
             }),
           });
         } catch (err) {
-          console.error(err);
+          console.error(
+            "Impossible de marquer les codes libérés comme lus :",
+            err,
+          );
         }
       }
 

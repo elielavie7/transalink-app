@@ -349,16 +349,6 @@ async function loadDashboardData() {
       rejected: weekTransactions.filter((t) => t.status === "rejected").length,
     };
 
-    shortcuts.agent[1].badge = 0;
-    shortcuts.terrain[2].badge = 0;
-
-    if (user.role === "agent") {
-      shortcuts.agent[1].badge = pendingReturnCodes;
-    }
-
-    if (user.role === "terrain") {
-      shortcuts.terrain[2].badge = pendingReturnCodes;
-    }
 
     renderDashboard(summary);
 
