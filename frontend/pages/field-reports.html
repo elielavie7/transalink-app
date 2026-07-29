@@ -289,7 +289,32 @@
         applyFilters();
       }
 
-      loadReports();
+      async function markFieldReportNotificationsRead() {
+        try {
+          const agencyId = user.agency_id;
+
+          if (!agencyId) return;
+
+          await fetch(`${API_URL}/notifications/read-types`, {
+            method: "PUT",
+            headers,
+            body: JSON.stringify({
+              agency_id: agencyId,
+              types: ["field_report"],
+            }),
+          });
+        } catch (error) {
+          console.log(
+            "Impossible de marquer les notifications de rapport comme lues",
+          );
+        }
+      }
+      async function initPage() {
+        await markFieldReportNotificationsRead();
+        await loadReports();
+      }
+
+      initPage();
     </script>
   </body>
 </html>
