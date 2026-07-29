@@ -104,8 +104,59 @@ AND created_at < ($3::date + interval '1 day')
 
     const totalIn = manualIncomes + returnCodeIncomes;
     const totalOut = sentTransactions + totalExpenses;
-    const systemBalance = totalIn - totalOut;
 
+    // Calcul du solde avant le début de la période
+    const openingParams = [agency_id, week_start];
+
+    const openingIncomes = await pool.query(
+      `
+  SELECT COALESCE(SUM(amount), 0) AS total
+  FROM incomes
+  WHERE agency_id = $1
+    AND created_at < $2::date
+  `,
+      openingParams,
+    );
+
+    const openingReturnCodes = await pool.query(
+      `
+  SELECT COALESCE(SUM(income_amount), 0) AS total
+  FROM return_codes
+  WHERE agency_id = $1
+    AND status != 'cancelled'
+    AND created_at < $2::date
+  `,
+      openingParams,
+    );
+
+    const openingTransactions = await pool.query(
+      `
+  SELECT COALESCE(SUM(amount), 0) AS total
+  FROM transactions
+  WHERE agency_id = $1
+    AND status = 'sent'
+    AND created_at < $2::date
+  `,
+      openingParams,
+    );
+
+    const openingExpenses = await pool.query(
+      `
+  SELECT COALESCE(SUM(amount), 0) AS total
+  FROM expenses
+  WHERE agency_id = $1
+    AND created_at < $2::date
+  `,
+      openingParams,
+    );
+
+    const openingBalance =
+      Number(openingIncomes.rows[0].total || 0) +
+      Number(openingReturnCodes.rows[0].total || 0) -
+      Number(openingTransactions.rows[0].total || 0) -
+      Number(openingExpenses.rows[0].total || 0);
+
+    const systemBalance = openingBalance + totalIn - totalOut;
     const declaredBalance = Number(declared_balance || 0);
     const difference = declaredBalance - systemBalance;
 
@@ -182,6 +233,7 @@ AND agency_id=$1
       report: {
         ...result.rows[0],
         details: {
+          opening_balance: openingBalance,
           manual_incomes: manualIncomes,
           return_codes_income: returnCodeIncomes,
           sent_transactions: sentTransactions,
