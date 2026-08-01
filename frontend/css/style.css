@@ -1,16 +1,14 @@
 /* TRANSITION ENTRE LES PAGES */
 
+/* TRANSITION TRÈS LÉGÈRE ENTRE LES PAGES */
+
 body {
   opacity: 1;
-  transform: translateY(0);
-  transition:
-    opacity 140ms ease,
-    transform 140ms ease;
+  transition: opacity 70ms linear;
 }
 
 body.page-leaving {
-  opacity: 0;
-  transform: translateY(4px);
+  opacity: 0.92;
   pointer-events: none;
 }
 * {
@@ -425,7 +423,7 @@ body {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: 4px;
-  z-index: 20;
+  z-index: 999;
   padding-bottom: calc(16px + env(safe-area-inset-bottom));
 }
 

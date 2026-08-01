@@ -58,6 +58,6 @@
 
     setTimeout(() => {
       window.location.href = page;
-    }, 140);
+    }, 60);
   };
 })();
