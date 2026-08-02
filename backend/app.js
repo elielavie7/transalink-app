@@ -4,6 +4,7 @@ const path = require("path");
 require("dotenv").config();
 
 const pool = require("./config/db");
+require("./config/firebase");
 
 const app = express();
 
@@ -22,6 +23,10 @@ app.use("/api/agencies", agencyRoutes);
 
 const userRoutes = require("./routes/userRoutes");
 app.use("/api/users", userRoutes);
+
+// routes pour les appareils 
+const deviceRoutes = require("./routes/deviceRoutes");
+app.use("/api/devices", deviceRoutes);
 
 const transactionRoutes = require("./routes/transactionRoutes");
 app.use("/api/transactions", transactionRoutes);
