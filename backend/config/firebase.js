@@ -1,3 +1,4 @@
+const fs = require("fs");
 const path = require("path");
 
 const { cert, getApps, initializeApp } = require("firebase-admin/app");
@@ -5,20 +6,30 @@ const { cert, getApps, initializeApp } = require("firebase-admin/app");
 const { getMessaging } = require("firebase-admin/messaging");
 
 /*
- * Clé privée Firebase Admin.
- * Ce fichier ne doit jamais être envoyé sur GitHub.
+ * En local :
+ * backend/config/firebase-service-account.json
+ *
+ * Sur Render :
+ * /etc/secrets/firebase-service-account.json
  */
-const serviceAccountPath = path.join(
-  __dirname,
-  "firebase-service-account.json",
-);
+const renderSecretPath = "/etc/secrets/firebase-service-account.json";
 
-const serviceAccount = require(serviceAccountPath);
+const localSecretPath = path.join(__dirname, "firebase-service-account.json");
 
-/*
- * Évite d’initialiser Firebase plusieurs fois
- * lors des redémarrages ou imports multiples.
- */
+const serviceAccountPath = fs.existsSync(renderSecretPath)
+  ? renderSecretPath
+  : localSecretPath;
+
+if (!fs.existsSync(serviceAccountPath)) {
+  throw new Error(
+    "Clé Firebase Admin introuvable. " +
+      "Ajoutez firebase-service-account.json " +
+      "dans backend/config en local ou dans les Secret Files de Render.",
+  );
+}
+
+const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, "utf8"));
+
 const firebaseApp =
   getApps().length > 0
     ? getApps()[0]
