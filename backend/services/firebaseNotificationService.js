@@ -1,4 +1,5 @@
 const pool = require("../config/db");
+
 const { messaging } = require("../config/firebase");
 
 exports.sendNotificationToUser = async (
@@ -6,10 +7,13 @@ exports.sendNotificationToUser = async (
   title,
   body,
   data = {},
+  unreadCount = 1,
 ) => {
   const result = await pool.query(
     `
-    SELECT id, token
+    SELECT
+      id,
+      token
     FROM device_tokens
     WHERE user_id = $1
     `,
@@ -27,7 +31,15 @@ exports.sendNotificationToUser = async (
 
   let sent = 0;
   let failed = 0;
+
   const errors = [];
+
+  const normalizedData = Object.fromEntries(
+    Object.entries(data).map(([key, value]) => [
+      key,
+      value === null || value === undefined ? "" : String(value),
+    ]),
+  );
 
   for (const device of result.rows) {
     try {
@@ -39,37 +51,30 @@ exports.sendNotificationToUser = async (
           body,
         },
 
-        data: Object.fromEntries(
-          Object.entries(data).map(([key, value]) => [
-            key,
-            String(value),
-          ]),
-        ),
+        data: normalizedData,
 
         android: {
           priority: "high",
 
           notification: {
             channelId: "transalink_notifications",
+
             sound: "default",
+
+            notificationCount: Math.max(0, Number(unreadCount) || 0),
           },
         },
       });
 
       sent += 1;
 
-      console.log(
-        `✅ Notification envoyée à user_id=${userId}`,
-        messageId,
-      );
+      console.log(`✅ Push envoyé à user_id=${userId}`, messageId);
     } catch (error) {
       failed += 1;
 
-      const errorCode =
-        error?.code || "firebase_error_unknown";
+      const errorCode = error?.code || "firebase_error_unknown";
 
-      const errorMessage =
-        error?.message || "Erreur Firebase inconnue";
+      const errorMessage = error?.message || "Erreur Firebase inconnue";
 
       errors.push({
         device_id: device.id,
@@ -78,19 +83,18 @@ exports.sendNotificationToUser = async (
       });
 
       console.error(
-        `❌ Notification refusée pour user_id=${userId}`,
+        `❌ Push refusé pour user_id=${userId}`,
         errorCode,
         errorMessage,
       );
 
       /*
-       * Supprime seulement les tokens définitivement invalides.
+       * Suppression uniquement des tokens
+       * définitivement invalides.
        */
       if (
-        errorCode ===
-          "messaging/registration-token-not-registered" ||
-        errorCode ===
-          "messaging/invalid-registration-token"
+        errorCode === "messaging/registration-token-not-registered" ||
+        errorCode === "messaging/invalid-registration-token"
       ) {
         await pool.query(
           `
