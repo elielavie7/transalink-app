@@ -16,7 +16,7 @@ router.get("/me", protect, deviceController.getMyDevices);
 
 router.post("/test-notification", protect, async (req, res) => {
   try {
-    await sendNotificationToUser(
+    const result = await sendNotificationToUser(
       req.user.id,
       "Test TransaLink",
       "Votre première notification Android fonctionne 🎉",
@@ -26,16 +26,13 @@ router.post("/test-notification", protect, async (req, res) => {
       },
     );
 
-    return res.json({
-      success: true,
-      message: "Notification de test envoyée.",
-    });
+    return res.status(result.success ? 200 : 500).json(result);
   } catch (error) {
     console.error("Erreur test notification :", error);
 
     return res.status(500).json({
       success: false,
-      message: "Erreur lors du test de notification.",
+      message: "Erreur pendant l’envoi de la notification.",
       error: error.message,
     });
   }
