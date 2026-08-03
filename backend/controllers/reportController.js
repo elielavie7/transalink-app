@@ -75,9 +75,9 @@ agency_id,
 }
 
 exports.getWeeklyReport = async (req, res) => {
-  console.log("===== REPORT =====");
-console.log(req.user);
-console.log("Agency :", req.query.agency_id);
+//   console.log("===== REPORT =====");
+// console.log(req.user);
+// console.log("Agency :", req.query.agency_id);
   try {
     const { start, end, mode } = req.query;
     const agency_id = req.query.agency_id;
