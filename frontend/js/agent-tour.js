@@ -1,5 +1,5 @@
 (function () {
-  const STORAGE_KEY = "transalink_agent_tour_completed_v1";
+  const STORAGE_KEY_PREFIX = "transalink_agent_tour_completed_v1";
 
   function getUser() {
     try {
@@ -7,6 +7,15 @@
     } catch (_) {
       return null;
     }
+  }
+  function getTourStorageKey() {
+    const user = getUser();
+
+    if (!user?.id) {
+      return STORAGE_KEY_PREFIX;
+    }
+
+    return `${STORAGE_KEY_PREFIX}_user_${user.id}`;
   }
 
   function waitForElement(selector, timeout = 8000) {
@@ -131,7 +140,7 @@
 
       if (!user || user.role !== "agent") return;
 
-      if (!force && localStorage.getItem(STORAGE_KEY) === "true") {
+      if (!force && localStorage.getItem(getTourStorageKey()) === "true") {
         return;
       }
 
@@ -153,6 +162,10 @@
         `
         <div class="agent-tour-overlay" id="agentTourOverlay">
           <div class="agent-tour-dim"></div>
+          <div
+  class="agent-tour-spotlight"
+  id="agentTourSpotlight"
+></div>
 
           <section
             class="agent-tour-card"
@@ -277,14 +290,33 @@
     positionCard(target) {
       const card = document.getElementById("agentTourCard");
 
-      if (!card || !target) return;
+      const spotlight = document.getElementById("agentTourSpotlight");
+
+      if (!card || !spotlight || !target) {
+        return;
+      }
 
       const targetRect = target.getBoundingClientRect();
+
+      const padding = 7;
+
+      spotlight.style.top = `${targetRect.top - padding}px`;
+
+      spotlight.style.left = `${targetRect.left - padding}px`;
+
+      spotlight.style.width = `${targetRect.width + padding * 2}px`;
+
+      spotlight.style.height = `${targetRect.height + padding * 2}px`;
+
+      const targetRadius = window.getComputedStyle(target).borderRadius;
+
+      spotlight.style.borderRadius = targetRadius || "24px";
 
       const cardRect = card.getBoundingClientRect();
 
       const margin = 16;
       const viewportWidth = window.innerWidth;
+
       const viewportHeight = window.innerHeight;
 
       let top = targetRect.bottom + margin;
@@ -313,11 +345,17 @@
         this.positionCard(this.currentTarget);
       }
     }
-
     clearHighlight() {
       document.querySelectorAll(".agent-tour-highlight").forEach((element) => {
         element.classList.remove("agent-tour-highlight");
       });
+
+      const spotlight = document.getElementById("agentTourSpotlight");
+
+      if (spotlight) {
+        spotlight.style.width = "0";
+        spotlight.style.height = "0";
+      }
     }
 
     closeSideMenu() {
@@ -327,7 +365,7 @@
     }
 
     finish() {
-      localStorage.setItem(STORAGE_KEY, "true");
+      localStorage.setItem(getTourStorageKey(), "true");
 
       this.clearHighlight();
       this.closeSideMenu();
@@ -343,7 +381,7 @@
   const tour = new AgentTour();
 
   window.restartAgentTour = function () {
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(getTourStorageKey());
     tour.start(true);
   };
 
