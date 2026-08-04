@@ -1,94 +1,103 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
 
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <script src="../js/auth-guard.js"></script>
-  <title>TransaLink - Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <script>
-  (function () {
-    const theme = localStorage.getItem("transalink_theme");
-    const fontScale = localStorage.getItem("transalink_font_scale") || "100";
+    <script src="../js/auth-guard.js"></script>
 
-    document.documentElement.style.fontSize = fontScale + "%";
+    <title>TransaLink - Dashboard</title>
 
-    if (theme === "dark") {
-      document.documentElement.classList.add("dark-mode-preload");
-    }
-  })();
-</script>
-  <link rel="stylesheet" href="../css/style.css" />
-</head>
+    <script>
+      (function () {
+        const theme = localStorage.getItem("transalink_theme");
 
-<body class="app-body">
+        const fontScale =
+          localStorage.getItem("transalink_font_scale") || "100";
 
-  <div class="mobile-app">
+        document.documentElement.style.fontSize = fontScale + "%";
 
-    <aside class="side-menu" id="sideMenu">
-      <div class="side-header">
-        <div class="avatar">T</div>
-        <div>
-          <h3 id="menuUserName">Utilisateur</h3>
-          <p id="menuUserRole">Rôle</p>
+        if (theme === "dark") {
+          document.documentElement.classList.add("dark-mode-preload");
+        }
+      })();
+    </script>
+
+    <link rel="stylesheet" href="../css/style.css" />
+
+    <link rel="stylesheet" href="../css/agent-tour.css" />
+  </head>
+
+  <body class="app-body">
+    <div class="mobile-app">
+      <aside class="side-menu" id="sideMenu">
+        <div class="side-header">
+          <div class="avatar">T</div>
+
+          <div>
+            <h3 id="menuUserName">Utilisateur</h3>
+
+            <p id="menuUserRole">Rôle</p>
+          </div>
         </div>
-      </div>
 
-      <nav id="sideLinks" class="side-links"></nav>
+        <nav id="sideLinks" class="side-links"></nav>
 
-      <button class="side-logout" onclick="logout()">Déconnexion</button>
-    </aside>
+        <button class="side-logout" onclick="logout()">Déconnexion</button>
+      </aside>
 
-    <div class="overlay" id="overlay" onclick="toggleMenu()"></div>
+      <div class="overlay" id="overlay" onclick="toggleMenu()"></div>
 
-    <header class="app-header">
-      <button class="icon-btn" onclick="toggleMenu()">☰</button>
+      <header class="app-header">
+        <button class="icon-btn" onclick="toggleMenu()">☰</button>
 
-      <div>
-        <h1 id="helloText">Bonjour</h1>
-        <p id="roleText">TransaLink</p>
-      </div>
-
-      <button class="notif-btn" onclick="openNotifications()">
-        🔔
-        <span id="notifBadge">0</span>
-      </button>
-    </header>
-
-    <main class="app-content">
-<div id="agencyBanner"></div>
-      <section class="balance-card">
         <div>
-          <p>Solde estimé</p>
-          <h2 id="balanceValue">0 FC</h2>
+          <h1 id="helloText">Bonjour</h1>
+
+          <p id="roleText">TransaLink</p>
         </div>
-        <span class="badge" id="statusBadge">Sécurisé</span>
-      </section>
 
-      <section class="mini-grid" id="summaryGrid"></section>
+        <button class="notif-btn" onclick="openNotifications()">
+          🔔
 
-      <h3 class="section-title">Mes raccourcis</h3>
-      <section class="shortcut-grid" id="shortcutGrid"></section>
+          <span id="notifBadge"> 0 </span>
+        </button>
+      </header>
 
-      <h3 class="section-title">Activité récente</h3>
-      <section class="activity-card" id="activityList">
-        <p class="empty-text">Aucune activité récente.</p>
-      </section>
+      <main class="app-content">
+        <div id="agencyBanner"></div>
 
-    </main>
+        <section class="balance-card">
+          <div>
+            <p>Solde estimé</p>
 
-    <nav class="bottom-nav" id="bottomNav"></nav>
-    
+            <h2 id="balanceValue">0 FC</h2>
+          </div>
 
-  </div>
-  
-  <script src="../js/config.js"></script>
- 
-  <script src="../js/dashboard.js"></script>
-  <script src="../js/app-settings.js"></script>
-   <script src="../js/app-nav.js"></script>
+          <span class="badge" id="statusBadge"> Sécurisé </span>
+        </section>
 
-</body>
+        <section class="mini-grid" id="summaryGrid"></section>
 
+        <h3 class="section-title">Mes raccourcis</h3>
+
+        <section class="shortcut-grid" id="shortcutGrid"></section>
+
+        <h3 class="section-title">Activité récente</h3>
+
+        <section class="activity-card" id="activityList">
+          <p class="empty-text">Aucune activité récente.</p>
+        </section>
+      </main>
+
+      <nav class="bottom-nav" id="bottomNav"></nav>
+    </div>
+
+    <script src="../js/config.js"></script>
+    <script src="../js/dashboard.js"></script>
+    <script src="../js/app-settings.js"></script>
+    <script src="../js/app-nav.js"></script>
+    <script src="../js/agent-tour.js"></script>
+  </body>
 </html>

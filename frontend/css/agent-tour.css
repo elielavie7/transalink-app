@@ -1,0 +1,161 @@
+/* GUIDE CONTEXTUEL AGENT */
+
+.agent-tour-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+  pointer-events: none;
+}
+
+.agent-tour-dim {
+  position: absolute;
+  inset: 0;
+  background: rgba(5, 12, 25, 0.72);
+  backdrop-filter: blur(2px);
+  pointer-events: auto;
+}
+
+.agent-tour-highlight {
+  position: relative !important;
+  z-index: 5002 !important;
+  outline: 4px solid rgba(255, 255, 255, 0.96);
+  outline-offset: 5px;
+  box-shadow:
+    0 0 0 10px rgba(37, 99, 235, 0.38),
+    0 24px 70px rgba(0, 0, 0, 0.36) !important;
+  border-radius: 24px;
+  pointer-events: none !important;
+}
+
+.agent-tour-card {
+  position: fixed;
+  z-index: 5003;
+  width: min(390px, calc(100vw - 32px));
+  background: #ffffff;
+  color: #0f172a;
+  border-radius: 24px;
+  padding: 22px;
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.38);
+  pointer-events: auto;
+  animation: agentTourAppear 180ms ease-out;
+}
+
+.agent-tour-progress {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.agent-tour-progress span {
+  color: #2563eb;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.agent-tour-skip {
+  border: none;
+  background: transparent;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.agent-tour-card h2 {
+  margin: 0 0 10px;
+  color: #0f172a;
+  font-size: 21px;
+  line-height: 1.25;
+}
+
+.agent-tour-card p {
+  margin: 0;
+  color: #526174;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+.agent-tour-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.agent-tour-actions button {
+  min-height: 44px;
+  border: none;
+  border-radius: 14px;
+  padding: 11px 17px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.agent-tour-back {
+  background: #eef2f7;
+  color: #334155;
+}
+
+.agent-tour-next {
+  background: #0d47a1;
+  color: #ffffff;
+  box-shadow: 0 10px 24px rgba(13, 71, 161, 0.24);
+}
+
+@keyframes agentTourAppear {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+body.dark-mode .agent-tour-card {
+  background: #111c31;
+  color: #f8fafc;
+  border: 1px solid #2b3b5f;
+}
+
+body.dark-mode .agent-tour-card h2 {
+  color: #f8fafc;
+}
+
+body.dark-mode .agent-tour-card p {
+  color: #cbd5e1;
+}
+
+body.dark-mode .agent-tour-back {
+  background: #17233a;
+  color: #e2e8f0;
+}
+
+@media (max-width: 480px) {
+  .agent-tour-card {
+    padding: 19px;
+    border-radius: 21px;
+  }
+
+  .agent-tour-card h2 {
+    font-size: 19px;
+  }
+
+  .agent-tour-card p {
+    font-size: 14px;
+  }
+
+  .agent-tour-actions {
+    gap: 8px;
+  }
+
+  .agent-tour-actions button {
+    flex: 1;
+    padding-inline: 12px;
+  }
+}
