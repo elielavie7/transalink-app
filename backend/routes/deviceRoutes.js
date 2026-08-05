@@ -4,9 +4,6 @@ const router = express.Router();
 
 const deviceController = require("../controllers/deviceController");
 const { protect } = require("../middlewares/authMiddleware");
-const {
-  sendNotificationToUser,
-} = require("../services/firebaseNotificationService");
 
 router.post("/register", protect, deviceController.registerDeviceToken);
 
