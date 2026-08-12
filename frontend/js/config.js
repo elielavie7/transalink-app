@@ -1,5 +1,5 @@
-// En production sur Render :
-const BASE_URL = "https://transalink-app.onrender.com";
+// En production sur VPS :
+const BASE_URL = window.location.origin;
 
 
 // En local chez vous (désactivé pour l'instant) :

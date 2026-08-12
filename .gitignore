@@ -4,3 +4,12 @@ frontend/node_modules/
 .env
 backend/.env
 backend/config/firebase-service-account.json
+# Sauvegardes et données sensibles
+backend/backups/
+
+# Secrets locaux
+backend/.env.save
+backend/.env.*
+
+# Fichiers utilisateurs
+backend/uploads/
