@@ -3,6 +3,25 @@
   const user = JSON.parse(localStorage.getItem("transalink_user"));
 
   if (!token || !user) return;
+  const heartbeatHeaders = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${token}`,
+  };
+
+  async function sendHeartbeat() {
+    try {
+      await fetch(`${API_URL}/users/heartbeat`, {
+        method: "PUT",
+        headers: heartbeatHeaders,
+      });
+    } catch (error) {
+      console.log("Heartbeat indisponible");
+    }
+  }
+
+  sendHeartbeat();
+
+  setInterval(sendHeartbeat, 25000);
 
   const role = user.role;
   const currentPage = window.location.pathname.split("/").pop();

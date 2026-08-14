@@ -33,6 +33,87 @@ document.getElementById("menuUserRole").textContent =
 function formatMoney(amount) {
   return Number(amount || 0).toLocaleString("fr-FR") + " FC";
 }
+function formatLastSeen(dateValue) {
+  if (!dateValue) {
+    return "Jamais connecté";
+  }
+
+  const date = new Date(dateValue);
+  const now = new Date();
+
+  const diffSeconds = Math.floor((now - date) / 1000);
+
+  if (diffSeconds < 60) {
+    return "En ligne";
+  }
+
+  const diffMinutes = Math.floor(diffSeconds / 60);
+
+  if (diffMinutes < 60) {
+    return `Vu il y a ${diffMinutes} min`;
+  }
+
+  const diffHours = Math.floor(diffMinutes / 60);
+
+  if (diffHours < 24) {
+    return `Vu il y a ${diffHours} h`;
+  }
+
+  return `Vu le ${date.toLocaleDateString("fr-FR")} à ${date.toLocaleTimeString(
+    "fr-FR",
+    {
+      hour: "2-digit",
+      minute: "2-digit",
+    },
+  )}`;
+}
+
+async function loadPresence() {
+  const box = document.getElementById("presenceBox");
+
+  if (!box) return;
+
+  try {
+    let url = `${API_URL}/users/presence-target`;
+
+    if (user.role === "terrain") {
+      url += `?agency_id=${encodeURIComponent(selectedAgencyId)}`;
+    }
+
+    const res = await fetch(url, {
+      headers,
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || !data.success) {
+      box.innerHTML = "";
+      return;
+    }
+
+    const target = data.user;
+
+    box.innerHTML = `
+      <div class="presence-card">
+        <span class="presence-dot ${target.is_online ? "online" : "offline"}"></span>
+
+        <div class="presence-info">
+          <strong>${target.name}</strong>
+          <small>
+            ${
+              target.is_online
+                ? "En ligne"
+                : formatLastSeen(target.last_seen_at)
+            }
+          </small>
+        </div>
+      </div>
+    `;
+  } catch (error) {
+    console.log("Présence indisponible");
+    box.innerHTML = "";
+  }
+}
 function isInCurrentWeek(dateValue) {
   if (!dateValue) return false;
 
@@ -349,7 +430,6 @@ async function loadDashboardData() {
       rejected: weekTransactions.filter((t) => t.status === "rejected").length,
     };
 
-
     renderDashboard(summary);
 
     await loadReport();
@@ -633,9 +713,11 @@ function changeAgency() {
 
   window.location.href = "agency-selector.html";
 }
-
+ 
 renderDashboard();
 loadDashboardData();
 loadNotificationsCount();
+loadPresence();
 
-setInterval(loadNotificationsCount, 8000);
+setInterval(loadNotificationsCount, 8000);                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
+setInterval(loadPresence, 15000);

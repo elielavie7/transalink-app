@@ -28,7 +28,7 @@ exports.createUser = async (req, res) => {
       `INSERT INTO users (name, role, password, transaction_pin)
        VALUES ($1, $2, $3, $4)
        RETURNING id, name, role, created_at`,
-      [name.trim(), role, hashedPassword, hashedPin]
+      [name.trim(), role, hashedPassword, hashedPin],
     );
 
     res.status(201).json({
@@ -48,8 +48,16 @@ exports.createUser = async (req, res) => {
 exports.getMe = async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, name, role, created_at FROM users WHERE id = $1`,
-      [req.user.id]
+      `SELECT
+  id,
+  name,
+  role,
+  agency_id,
+  last_seen_at,
+  created_at
+FROM users
+WHERE id = $1`,
+      [req.user.id],
     );
 
     res.json({
@@ -76,10 +84,9 @@ exports.updateName = async (req, res) => {
       });
     }
 
-    const user = await pool.query(
-      `SELECT * FROM users WHERE id = $1`,
-      [req.user.id]
-    );
+    const user = await pool.query(`SELECT * FROM users WHERE id = $1`, [
+      req.user.id,
+    ]);
 
     if (user.rows.length === 0) {
       return res.status(404).json({
@@ -111,7 +118,7 @@ exports.updateName = async (req, res) => {
        SET name = $1
        WHERE id = $2
        RETURNING id, name, role`,
-      [new_name.trim(), req.user.id]
+      [new_name.trim(), req.user.id],
     );
 
     res.json({
@@ -119,7 +126,6 @@ exports.updateName = async (req, res) => {
       message: "Nom modifié avec succès",
       user: result.rows[0],
     });
-
   } catch (error) {
     res.status(500).json({
       success: false,
@@ -139,7 +145,9 @@ exports.changePassword = async (req, res) => {
       });
     }
 
-    const user = await pool.query(`SELECT password FROM users WHERE id = $1`, [req.user.id]);
+    const user = await pool.query(`SELECT password FROM users WHERE id = $1`, [
+      req.user.id,
+    ]);
 
     const valid = await verifySecret(old_password, user.rows[0].password);
 
@@ -152,10 +160,10 @@ exports.changePassword = async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(new_password, 10);
 
-    await pool.query(
-      `UPDATE users SET password = $1 WHERE id = $2`,
-      [hashedPassword, req.user.id]
-    );
+    await pool.query(`UPDATE users SET password = $1 WHERE id = $2`, [
+      hashedPassword,
+      req.user.id,
+    ]);
 
     res.json({
       success: true,
@@ -190,7 +198,7 @@ exports.changeTransactionPin = async (req, res) => {
 
     const user = await pool.query(
       `SELECT transaction_pin FROM users WHERE id = $1`,
-      [req.user.id]
+      [req.user.id],
     );
 
     const valid = await verifySecret(old_pin, user.rows[0].transaction_pin);
@@ -203,10 +211,10 @@ exports.changeTransactionPin = async (req, res) => {
 
     const hashedPin = await bcrypt.hash(new_pin, 10);
 
-    await pool.query(
-      `UPDATE users SET transaction_pin = $1 WHERE id = $2`,
-      [hashedPin, req.user.id]
-    );
+    await pool.query(`UPDATE users SET transaction_pin = $1 WHERE id = $2`, [
+      hashedPin,
+      req.user.id,
+    ]);
 
     res.json({
       success: true,
@@ -216,6 +224,210 @@ exports.changeTransactionPin = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Erreur modification PIN",
+      error: error.message,
+    });
+  }
+};
+exports.heartbeat = async (req, res) => {
+  try {
+    const result = await pool.query(
+      `
+      UPDATE users
+      SET last_seen_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+      RETURNING id, name, role, last_seen_at
+      `,
+      [req.user.id],
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Utilisateur introuvable",
+      });
+    }
+
+    res.json({
+      success: true,
+      last_seen_at: result.rows[0].last_seen_at,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Erreur mise à jour présence",
+      error: error.message,
+    });
+  }
+};
+exports.getPresence = async (req, res) => {
+  try {
+    const { user_id } = req.query;
+
+    if (!user_id) {
+      return res.status(400).json({
+        success: false,
+        message: "user_id obligatoire",
+      });
+    }
+
+    const result = await pool.query(
+      `
+      SELECT
+        id,
+        name,
+        role,
+        last_seen_at
+      FROM users
+      WHERE id = $1
+      `,
+      [user_id],
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Utilisateur introuvable",
+      });
+    }
+
+    const targetUser = result.rows[0];
+
+    const lastSeen = targetUser.last_seen_at
+      ? new Date(targetUser.last_seen_at)
+      : null;
+
+    const now = new Date();
+
+    const diffSeconds = lastSeen ? Math.floor((now - lastSeen) / 1000) : null;
+
+    const isOnline = diffSeconds !== null && diffSeconds <= 60;
+
+    res.json({
+      success: true,
+      user: {
+        id: targetUser.id,
+        name: targetUser.name,
+        role: targetUser.role,
+        last_seen_at: targetUser.last_seen_at,
+        is_online: isOnline,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Erreur récupération présence",
+      error: error.message,
+    });
+  }
+};
+exports.getPresenceTarget = async (req, res) => {
+  try {
+    const currentUser = await pool.query(
+      `
+      SELECT id, name, role, agency_id
+      FROM users
+      WHERE id = $1
+      `,
+      [req.user.id],
+    );
+
+    if (currentUser.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Utilisateur introuvable.",
+      });
+    }
+
+    const me = currentUser.rows[0];
+
+    let result;
+
+    // ============================
+    // AGENT -> surveille le TERRAIN
+    // ============================
+    if (me.role === "agent") {
+      result = await pool.query(
+        `
+        SELECT
+          id,
+          name,
+          role,
+          last_seen_at
+        FROM users
+        WHERE role = 'terrain'
+        ORDER BY id ASC
+        LIMIT 1
+        `,
+      );
+    }
+
+    // ============================
+    // TERRAIN -> surveille l'AGENT
+    // de l'agence sélectionnée
+    // ============================
+    else if (me.role === "terrain") {
+      const agency_id = req.query.agency_id;
+
+      if (!agency_id) {
+        return res.status(400).json({
+          success: false,
+          message: "Agence non sélectionnée.",
+        });
+      }
+
+      result = await pool.query(
+        `
+        SELECT
+          id,
+          name,
+          role,
+          last_seen_at
+        FROM users
+        WHERE role = 'agent'
+        AND agency_id = $1
+        ORDER BY id ASC
+        LIMIT 1
+        `,
+        [agency_id],
+      );
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: "Rôle non pris en charge.",
+      });
+    }
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Aucun utilisateur correspondant trouvé.",
+      });
+    }
+
+    const target = result.rows[0];
+
+    const lastSeen = target.last_seen_at ? new Date(target.last_seen_at) : null;
+
+    const now = new Date();
+
+    const diffSeconds = lastSeen ? Math.floor((now - lastSeen) / 1000) : null;
+
+    const isOnline = diffSeconds !== null && diffSeconds <= 60;
+
+    res.json({
+      success: true,
+      user: {
+        id: target.id,
+        name: target.name,
+        role: target.role,
+        last_seen_at: target.last_seen_at,
+        is_online: isOnline,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Erreur récupération utilisateur connecté",
       error: error.message,
     });
   }

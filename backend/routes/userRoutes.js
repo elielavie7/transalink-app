@@ -11,4 +11,9 @@ router.put("/name", protect, userController.updateName);
 router.put("/password", protect, userController.changePassword);
 router.put("/transaction-pin", protect, userController.changeTransactionPin);
 
+router.put("/heartbeat", protect, userController.heartbeat);
+router.get("/presence", protect, userController.getPresence);
+
+router.get("/presence-target", protect, userController.getPresenceTarget);
+
 module.exports = router;
