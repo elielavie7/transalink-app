@@ -824,7 +824,13 @@ body {
 .seen-status strong {
   font-weight: 700;
 }
-
+.seen-checks {
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -3px;
+  margin-right: 4px;
+}
 .status-pill.pending {
   background: #fef3c7;
   color: #92400e;

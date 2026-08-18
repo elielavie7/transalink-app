@@ -385,8 +385,8 @@
  <p class="seen-status ${t.agent_seen_at ? "seen" : "pending-seen"}">
   ${
     t.agent_seen_at
-      ? `✓✓ Vue par l’agent à ${formatDate(t.agent_seen_at)}`
-      : `✓ Envoyée à l’agent`
+      ? `<span class="seen-checks">✓✓</span> Vue par l’agent à ${formatDate(t.agent_seen_at)}`
+      : `<span class="seen-checks">✓</span> Envoyée à l’agent`
   }
 </p>
 </div>
@@ -705,6 +705,23 @@
       }
 
       initPage();
+      // ACTUALISATION AUTOMATIQUE DES "VU"
+      // =====================================
+
+      // Actualise toutes les 3 secondes si la page est visible
+      setInterval(() => {
+        if (!document.hidden) {
+          loadMyRequests();
+        }
+      }, 3000);
+
+      // Si on revient dans l'application,
+      // actualiser immédiatement
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) {
+          loadMyRequests();
+        }
+      });
     </script>
   </body>
 </html>
