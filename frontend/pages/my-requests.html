@@ -264,8 +264,10 @@
         return titles[period] || "Mes demandes";
       }
 
-      async function loadMyRequests() {
-        requestsList.innerHTML = `<p class="empty-text">Chargement...</p>`;
+      async function loadMyRequests(silent = false) {
+        if (!silent) {
+          requestsList.innerHTML = `<p class="empty-text">Chargement...</p>`;
+        }
         paginationBox.innerHTML = "";
         miniSummary.innerHTML = "";
         const agencyId = localStorage.getItem("selected_agency_id");
@@ -711,11 +713,17 @@
       // Actualise toutes les 3 secondes si la page est visible
       setInterval(() => {
         if (!document.hidden) {
-          loadMyRequests();
+          loadMyRequests(true);
         }
       }, 3000);
 
-      
+      // Si on revient dans l'application,
+      // actualiser immédiatement
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) {
+          loadMyRequests(true);
+        }
+      });
     </script>
   </body>
 </html>

@@ -283,8 +283,10 @@
         return `<span class="final-status">${statusLabel(t.status)}</span>`;
       }
 
-      async function loadTransactions() {
-        requestsList.innerHTML = `<p class="empty-text">Chargement des demandes...</p>`;
+      async function loadTransactions(silent = false) {
+        if (!silent) {
+          requestsList.innerHTML = `<p class="empty-text">Chargement...</p>`;
+        }
         paginationBox.innerHTML = "";
         miniSummary.innerHTML = "";
 
@@ -1075,11 +1077,16 @@
       // Actualisation toutes les 3 secondes
       setInterval(() => {
         if (!document.hidden) {
-          loadTransactions();
+          loadTransactions(true);
         }
       }, 3000);
 
-      
+      // Actualisation immédiate quand on revient dans l'application
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) {
+          loadTransactions(true);
+        }
+      });
     </script>
   </body>
 </html>
