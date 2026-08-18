@@ -788,6 +788,42 @@ body {
   font-weight: 900;
   white-space: nowrap;
 }
+/* ==============================
+   STATUT DE LECTURE / COCHES
+============================== */
+
+.seen-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+
+  margin-top: 6px;
+  padding: 5px 9px;
+
+  border-radius: 10px;
+
+  font-size: 12px;
+  font-weight: 600;
+
+  background: #f4f6f8;
+  color: #64748b;
+}
+
+/* Cas où l'autre utilisateur a réellement vu */
+.seen-status.seen {
+  background: #eaf7ef;
+  color: #15803d;
+}
+
+/* Cas envoyé mais pas encore vu */
+.seen-status.pending-seen {
+  background: #f4f6f8;
+  color: #64748b;
+}
+
+.seen-status strong {
+  font-weight: 700;
+}
 
 .status-pill.pending {
   background: #fef3c7;

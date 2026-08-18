@@ -379,9 +379,17 @@
           ${t.final_message ? `<p class="compact-response success">✅ ${t.final_message}</p>` : ""}
           ${t.rejection_reason ? `<p class="compact-response error">❌ ${t.rejection_reason}</p>` : ""}
 
-          <div class="request-info compact-info">
-            <p><strong>Date :</strong> ${formatDate(t.created_at)}</p>
-          </div>
+         <div class="request-info compact-info">
+  <p><strong>Date :</strong> ${formatDate(t.created_at)}</p>
+
+ <p class="seen-status ${t.agent_seen_at ? "seen" : "pending-seen"}">
+  ${
+    t.agent_seen_at
+      ? `✓✓ Vue par l’agent à ${formatDate(t.agent_seen_at)}`
+      : `✓ Envoyée à l’agent`
+  }
+</p>
+</div>
 
           <div class="request-actions">
             <button class="small-btn primary-small-btn" onclick="openDetails(${t.id})">Voir détails</button>
@@ -439,11 +447,38 @@
         }
       }
 
-      function openDetails(id) {
+      async function openDetails(id) {
         const t = allMyTransactions.find(
           (item) => Number(item.id) === Number(id),
         );
+
         if (!t) return;
+
+        // Si l'agent a déjà répondu, Terrain vient réellement de voir la réponse
+        if (["sent", "rejected"].includes(t.status) && !t.terrain_seen_at) {
+          try {
+            const agencyId = localStorage.getItem("selected_agency_id");
+
+            const res = await fetch(
+              `${API_URL}/transactions/seen/terrain/${id}?agency_id=${encodeURIComponent(agencyId)}`,
+              {
+                method: "PUT",
+                headers,
+              },
+            );
+
+            const data = await res.json();
+
+            if (data.success) {
+              t.terrain_seen_at =
+                data.transaction?.terrain_seen_at || new Date().toISOString();
+            }
+          } catch (error) {
+            console.log(
+              "Impossible de marquer la réponse comme vue par le terrain",
+            );
+          }
+        }
 
         const oldModal = document.getElementById("detailsModal");
         if (oldModal) oldModal.remove();

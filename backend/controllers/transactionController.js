@@ -632,9 +632,7 @@ exports.uploadTransactionAudio = async (req, res) => {
     }
 
     const column =
-      audio_type === "terrain"
-        ? "terrain_audio_url"
-        : "agent_audio_url";
+      audio_type === "terrain" ? "terrain_audio_url" : "agent_audio_url";
 
     const audioUrl = `/uploads/audios/${req.file.filename}`;
 
@@ -660,6 +658,118 @@ exports.uploadTransactionAudio = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Erreur enregistrement audio",
+      error: error.message,
+    });
+  }
+};
+
+exports.markAgentSeen = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (req.user.role !== "agent") {
+      return res.status(403).json({
+        success: false,
+        message: "Seul l’agent peut marquer cette demande comme vue.",
+      });
+    }
+
+    const agent = await pool.query(
+      `
+      SELECT agency_id
+      FROM users
+      WHERE id = $1
+      `,
+      [req.user.id],
+    );
+
+    const agency_id = agent.rows[0]?.agency_id;
+
+    if (!agency_id) {
+      return res.status(400).json({
+        success: false,
+        message: "Aucune agence associée à cet agent.",
+      });
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE transactions
+      SET agent_seen_at = COALESCE(agent_seen_at, CURRENT_TIMESTAMP)
+      WHERE id = $1
+      AND agency_id = $2
+      RETURNING *
+      `,
+      [id, agency_id],
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Transaction introuvable.",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Demande marquée comme vue par l’agent.",
+      transaction: result.rows[0],
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Erreur lecture demande agent",
+      error: error.message,
+    });
+  }
+};
+exports.markTerrainSeen = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const agency_id = req.query.agency_id;
+
+    if (req.user.role !== "terrain") {
+      return res.status(403).json({
+        success: false,
+        message: "Seul le terrain peut marquer cette réponse comme vue.",
+      });
+    }
+
+    if (!agency_id) {
+      return res.status(400).json({
+        success: false,
+        message: "Agence non sélectionnée.",
+      });
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE transactions
+      SET terrain_seen_at = COALESCE(terrain_seen_at, CURRENT_TIMESTAMP)
+      WHERE id = $1
+      AND agency_id = $2
+      AND created_by = $3
+      RETURNING *
+      `,
+      [id, agency_id, req.user.id],
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Transaction introuvable.",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Réponse marquée comme vue par le terrain.",
+      transaction: result.rows[0],
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Erreur lecture réponse terrain",
       error: error.message,
     });
   }

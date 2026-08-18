@@ -426,10 +426,24 @@
               : ""
           }
 
-          <div class="request-info compact-info">
-            <p><strong>Créée par :</strong> ${t.created_by_name || "Terrain"}</p>
-            <p><strong>Date :</strong> ${formatDate(t.created_at)}</p>
-          </div>
+        <div class="request-info compact-info">
+  <p><strong>Créée par :</strong> ${t.created_by_name || "Terrain"}</p>
+  <p><strong>Date :</strong> ${formatDate(t.created_at)}</p>
+
+  ${
+    ["sent", "rejected"].includes(t.status)
+      ? `
+       <p class="seen-status ${t.terrain_seen_at ? "seen" : "pending-seen"}">
+  ${
+    t.terrain_seen_at
+      ? `✓✓ Vue par Terrain à ${formatDate(t.terrain_seen_at)}`
+      : `✓ Réponse envoyée à Terrain`
+  }
+</p>
+      `
+      : ""
+  }
+</div>
 
           <div class="request-actions">
             <button class="small-btn primary-small-btn" onclick="openDetails(${t.id})">Voir détails</button>
@@ -480,11 +494,33 @@
         }
       }
 
-      function openDetails(id) {
+      async function openDetails(id) {
         const t = allTransactions.find(
           (item) => Number(item.id) === Number(id),
         );
+
         if (!t) return;
+
+        // L'agent vient réellement d'ouvrir la demande
+        if (!t.agent_seen_at) {
+          try {
+            const res = await fetch(
+              `${API_URL}/transactions/seen/agent/${id}`,
+              {
+                method: "PUT",
+                headers,
+              },
+            );
+
+            const data = await res.json();
+
+            if (data.success) {
+              t.agent_seen_at = data.agent_seen_at || new Date().toISOString();
+            }
+          } catch (error) {
+            console.log("Impossible de marquer la demande comme vue");
+          }
+        }
 
         const oldModal = document.getElementById("detailsModal");
         if (oldModal) oldModal.remove();
