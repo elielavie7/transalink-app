@@ -1080,10 +1080,7 @@
         if (document.hidden) return;
 
         try {
-          const res = await fetch(
-            `${API_URL}/transactions?agency_id=${selectedAgencyId}`,
-            { headers },
-          );
+          const res = await fetch(`${API_URL}/transactions`, { headers });
 
           const data = await res.json();
 
@@ -1096,13 +1093,14 @@
 
             if (t.terrain_seen_at) {
               el.className = "seen-status seen";
+
               el.innerHTML =
                 `<span class="seen-checks">✓✓</span> ` +
                 `Vue par Terrain à ${formatDate(t.terrain_seen_at)}`;
             }
           });
         } catch (error) {
-          console.log("Actualisation vu indisponible");
+          console.log("Actualisation vu indisponible", error);
         }
       }, 3000);
     </script>
