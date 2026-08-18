@@ -283,10 +283,8 @@
         return `<span class="final-status">${statusLabel(t.status)}</span>`;
       }
 
-      async function loadTransactions(silent = false) {
-        if (!silent) {
-          requestsList.innerHTML = `<p class="empty-text">Chargement...</p>`;
-        }
+      async function loadTransactions() {
+        requestsList.innerHTML = `<p class="empty-text">Chargement...</p>`;
         paginationBox.innerHTML = "";
         miniSummary.innerHTML = "";
 
@@ -435,7 +433,10 @@
   ${
     ["sent", "rejected"].includes(t.status)
       ? `
-       <p class="seen-status ${t.terrain_seen_at ? "seen" : "pending-seen"}">
+      <p
+  id="seen-status-${t.id}"
+  class="seen-status ${t.terrain_seen_at ? "seen" : "pending-seen"}"
+>
   ${
     t.terrain_seen_at
       ? `<span class="seen-checks">✓✓</span> Vue par Terrain à ${formatDate(t.terrain_seen_at)}`
@@ -1075,18 +1076,35 @@
       // =====================================
 
       // Actualisation toutes les 3 secondes
-      setInterval(() => {
-        if (!document.hidden) {
-          loadTransactions(true);
-        }
-      }, 7000);
+      setInterval(async () => {
+        if (document.hidden) return;
 
-      // Actualisation immédiate quand on revient dans l'application
-      document.addEventListener("visibilitychange", () => {
-        if (!document.hidden) {
-          loadTransactions(true);
+        try {
+          const res = await fetch(
+            `${API_URL}/transactions?agency_id=${selectedAgencyId}`,
+            { headers },
+          );
+
+          const data = await res.json();
+
+          if (!data.success) return;
+
+          (data.transactions || []).forEach((t) => {
+            const el = document.getElementById(`seen-status-${t.id}`);
+
+            if (!el) return;
+
+            if (t.terrain_seen_at) {
+              el.className = "seen-status seen";
+              el.innerHTML =
+                `<span class="seen-checks">✓✓</span> ` +
+                `Vue par Terrain à ${formatDate(t.terrain_seen_at)}`;
+            }
+          });
+        } catch (error) {
+          console.log("Actualisation vu indisponible");
         }
-      });
+      }, 3000);
     </script>
   </body>
 </html>

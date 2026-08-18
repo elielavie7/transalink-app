@@ -264,10 +264,8 @@
         return titles[period] || "Mes demandes";
       }
 
-      async function loadMyRequests(silent = false) {
-        if (!silent) {
-          requestsList.innerHTML = `<p class="empty-text">Chargement...</p>`;
-        }
+      async function loadMyRequests() {
+        requestsList.innerHTML = `<p class="empty-text">Chargement...</p>`;
         paginationBox.innerHTML = "";
         miniSummary.innerHTML = "";
         const agencyId = localStorage.getItem("selected_agency_id");
@@ -384,7 +382,10 @@
          <div class="request-info compact-info">
   <p><strong>Date :</strong> ${formatDate(t.created_at)}</p>
 
- <p class="seen-status ${t.agent_seen_at ? "seen" : "pending-seen"}">
+<p
+  id="seen-status-${t.id}"
+  class="seen-status ${t.agent_seen_at ? "seen" : "pending-seen"}"
+>
   ${
     t.agent_seen_at
       ? `<span class="seen-checks">✓✓</span> Vue par l’agent à ${formatDate(t.agent_seen_at)}`
@@ -711,19 +712,37 @@
       // =====================================
 
       // Actualise toutes les 3 secondes si la page est visible
-      setInterval(() => {
-        if (!document.hidden) {
-          loadMyRequests(true);
-        }
-      }, 7000);
+      setInterval(async () => {
+        if (document.hidden) return;
 
-      // Si on revient dans l'application,
-      // actualiser immédiatement
-      document.addEventListener("visibilitychange", () => {
-        if (!document.hidden) {
-          loadMyRequests(true);
+        try {
+          const agencyId = localStorage.getItem("selected_agency_id");
+
+          const res = await fetch(
+            `${API_URL}/transactions?agency_id=${agencyId}`,
+            { headers },
+          );
+
+          const data = await res.json();
+
+          if (!data.success) return;
+
+          (data.transactions || []).forEach((t) => {
+            const el = document.getElementById(`seen-status-${t.id}`);
+
+            if (!el) return;
+
+            if (t.agent_seen_at) {
+              el.className = "seen-status seen";
+              el.innerHTML =
+                `<span class="seen-checks">✓✓</span> ` +
+                `Vue par l’agent à ${formatDate(t.agent_seen_at)}`;
+            }
+          });
+        } catch (error) {
+          console.log("Actualisation vu indisponible");
         }
-      });
+      }, 3000);
     </script>
   </body>
 </html>
