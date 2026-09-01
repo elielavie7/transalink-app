@@ -114,23 +114,17 @@ async function loadPresence() {
     box.innerHTML = "";
   }
 }
-function isInCurrentWeek(dateValue) {
+function isToday(dateValue) {
   if (!dateValue) return false;
 
   const date = new Date(dateValue);
   const now = new Date();
 
-  const currentDay = now.getDay() || 7;
-
-  const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  weekStart.setDate(weekStart.getDate() - currentDay + 1);
-  weekStart.setHours(0, 0, 0, 0);
-
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekStart.getDate() + 6);
-  weekEnd.setHours(23, 59, 59, 999);
-
-  return date >= weekStart && date <= weekEnd;
+  return (
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate()
+  );
 }
 
 function toggleMenu() {
@@ -409,9 +403,7 @@ async function loadDashboardData() {
       );
     }
 
-    const weekTransactions = transactions.filter((t) =>
-      isInCurrentWeek(t.created_at),
-    );
+    const todayTransactions = transactions.filter((t) => isToday(t.created_at));
 
     const pendingReturnCodes = returnCodes.filter(
       (c) => c.status === "pending",
@@ -424,10 +416,10 @@ async function loadDashboardData() {
     }, 0);
 
     const summary = {
-      pending: weekTransactions.filter((t) => t.status === "pending").length,
-      approved: weekTransactions.filter((t) => t.status === "approved").length,
-      sent: weekTransactions.filter((t) => t.status === "sent").length,
-      rejected: weekTransactions.filter((t) => t.status === "rejected").length,
+      pending: todayTransactions.filter((t) => t.status === "pending").length,
+      approved: todayTransactions.filter((t) => t.status === "approved").length,
+      sent: todayTransactions.filter((t) => t.status === "sent").length,
+      rejected: todayTransactions.filter((t) => t.status === "rejected").length,
     };
 
     renderDashboard(summary);
@@ -713,11 +705,11 @@ function changeAgency() {
 
   window.location.href = "agency-selector.html";
 }
- 
+
 renderDashboard();
 loadDashboardData();
 loadNotificationsCount();
 loadPresence();
 
-setInterval(loadNotificationsCount, 8000);                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
+setInterval(loadNotificationsCount, 8000);
 setInterval(loadPresence, 15000);
