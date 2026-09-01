@@ -669,10 +669,10 @@
         <div class="custom-modal" id="customModal" onclick="closeModal()">
           <div class="modal-box" onclick="event.stopPropagation()">
             <h2>📤 Confirmer l’envoi</h2>
-            <p>Ajoute le nom du client. Le message final sera généré automatiquement.</p>
+            <p>Le nom du client est facultatif. Le message final sera généré automatiquement.</p>
 
             <label>Nom du client</label>
-            <input id="finalClientName" placeholder="Ex : Jean" oninput="updateFinalPreview('${formatted}')" />
+            <input id="finalClientName" placeholder="Ex : elie (le nom est facultatif)" oninput="updateFinalPreview('${formatted}')" />
 
             <label>Message final automatique</label>
             <div class="final-message-preview" id="finalMessagePreview">
@@ -726,20 +726,10 @@
         const receipt = document.getElementById("receiptImage").files[0];
         const agencyId = localStorage.getItem("selected_agency_id");
 
-        if (!final_client_name) {
-          showSentError("Nom du client obligatoire.");
-          return;
-        }
-
         if (!receipt) {
           showSentError(
             "Ajoute la capture de la transaction avant de confirmer.",
           );
-          return;
-        }
-
-        if (!agentAudioBlob) {
-          showSentError("Ajoute un audio agent avant de confirmer l’envoi.");
           return;
         }
 
@@ -867,8 +857,8 @@
         <div class="audio-card modal-audio-card">
           <div class="audio-head">
             <div>
-              <h3>🎙️ Audio agent</h3>
-              <p>Ajoute une réponse vocale si nécessaire.</p>
+            <h3>🎙️ Audio <span style="font-weight:500;">(facultatif)</span></h3>
+<p>l'ajout d'un audio n'est pas obligatoire sauf s'il y a un cas necessaire</p>
             </div>
             <span id="agentAudioStatus">Aucun audio</span>
           </div>

@@ -506,13 +506,6 @@ exports.markTransactionSent = async (req, res) => {
     const { id } = req.params;
     const { final_client_name, validated_by } = req.body;
 
-    if (!final_client_name) {
-      return res.status(400).json({
-        success: false,
-        message: "Nom du client obligatoire",
-      });
-    }
-
     const current = await pool.query(
       `SELECT * FROM transactions WHERE id = $1`,
       [id],
@@ -546,7 +539,10 @@ exports.markTransactionSent = async (req, res) => {
     }
 
     const amountFormatted = Number(transaction.amount).toLocaleString("fr-FR");
-    const finalMessage = `✅ ${amountFormatted} FC ina enda kwa ${final_client_name}.`;
+
+    const finalMessage = final_client_name
+      ? `✅ ${amountFormatted} FC ina enda kwa ${final_client_name}.`
+      : `✅ ${amountFormatted} FC imetumwa kwa ${transaction.phone}.`;
 
     const receiptUrl = req.file
       ? `/uploads/receipts/${req.file.filename}`
@@ -562,7 +558,13 @@ exports.markTransactionSent = async (req, res) => {
            completed_at = CURRENT_TIMESTAMP
        WHERE id = $5
        RETURNING *`,
-      [validated_by || null, final_client_name, finalMessage, receiptUrl, id],
+      [
+        validated_by || null,
+        final_client_name || null,
+        finalMessage,
+        receiptUrl,
+        id,
+      ],
     );
 
     await notificationController.createNotification({
