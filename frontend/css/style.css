@@ -2316,3 +2316,460 @@ html.dark-mode .terrain-history-amount,
 html.dark-mode .terrain-history-details strong {
   color: #f8fafc;
 }
+.receipt-edit-actions {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  margin-bottom: 6px;
+}
+
+.receipt-edit-actions button {
+  width: 40px;
+  height: 40px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border: 1px solid #d6e2f2;
+  border-radius: 12px;
+
+  background: #f4f8ff;
+  color: #1746d1;
+
+  font-size: 20px;
+  font-weight: 700;
+
+  cursor: pointer;
+
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.08);
+
+  transition:
+    transform 0.15s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.receipt-edit-actions button:hover {
+  background: #e8f1ff;
+  box-shadow: 0 5px 12px rgba(0, 0, 0, 0.12);
+}
+
+.receipt-edit-actions button:active {
+  transform: scale(0.92);
+}
+
+.crop-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+
+  background: #080c10;
+
+  display: flex;
+  justify-content: center;
+  align-items: center;
+
+  padding: 0;
+}
+
+.crop-box {
+  width: 100%;
+  max-width: 620px;
+  height: 100%;
+
+  display: flex;
+  flex-direction: column;
+
+  padding: 16px 14px;
+
+  background: #080c10;
+  color: white;
+
+  overflow: hidden;
+}
+
+/* HEADER */
+
+.crop-editor-header {
+  display: grid;
+  grid-template-columns: 70px 1fr 80px;
+  align-items: center;
+
+  min-height: 48px;
+}
+
+.crop-editor-header strong {
+  text-align: center;
+  font-size: 17px;
+}
+
+.crop-header-btn {
+  border: none;
+  background: transparent;
+
+  color: white;
+  font-size: 24px;
+
+  text-align: left;
+}
+
+.crop-done-btn {
+  border: none;
+  background: transparent;
+
+  color: #20c76a;
+
+  font-size: 16px;
+  font-weight: 700;
+}
+
+/* OUTILS */
+
+.crop-editor-toolbar {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+
+  margin: 10px 0 6px;
+
+  padding: 7px;
+
+  border-radius: 15px;
+
+  background: #151a1f;
+}
+
+.crop-tool {
+  flex: 1;
+
+  max-width: 100px;
+
+  border: none;
+  border-radius: 11px;
+
+  padding: 8px 4px;
+
+  background: transparent;
+  color: #c8cdd2;
+
+  font-size: 20px;
+}
+
+.crop-tool span {
+  display: block;
+
+  margin-top: 2px;
+
+  font-size: 10px;
+}
+
+.crop-tool.active {
+  background: #25352c;
+  color: #21c96b;
+}
+
+/* TEXTE */
+
+.crop-help {
+  text-align: center;
+
+  margin: 7px 0 10px;
+
+  color: #aeb6bd;
+
+  font-size: 12px;
+}
+
+/* IMAGE */
+
+.crop-stage-container {
+  flex: 1;
+
+  min-height: 0;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  overflow: hidden;
+}
+
+.crop-stage {
+  position: relative;
+
+  display: inline-block;
+
+  max-width: 100%;
+  max-height: 100%;
+
+  overflow: hidden;
+
+  line-height: 0;
+}
+
+#receiptCropCanvas {
+  display: block;
+
+  max-width: 100%;
+  max-height: 62vh;
+
+  width: auto;
+  height: auto;
+}
+
+/* PINCEAU */
+
+#receiptBrushCanvas {
+  position: absolute;
+
+  inset: 0;
+
+  width: 100%;
+  height: 100%;
+
+  z-index: 2;
+
+  pointer-events: none;
+
+  touch-action: none;
+}
+
+/* CADRE */
+
+.crop-selection-box {
+  position: absolute;
+
+  z-index: 4;
+
+  border: 2px solid #fff;
+
+  box-sizing: border-box;
+
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.48);
+
+  touch-action: none;
+}
+
+/* GRILLE 3x3 */
+
+.crop-grid {
+  position: absolute;
+
+  inset: 0;
+
+  pointer-events: none;
+
+  background-image:
+    linear-gradient(
+      to right,
+      transparent 33.33%,
+      rgba(255, 255, 255, 0.32) 33.33%,
+      rgba(255, 255, 255, 0.32) 33.7%,
+      transparent 33.7%,
+      transparent 66.66%,
+      rgba(255, 255, 255, 0.32) 66.66%,
+      rgba(255, 255, 255, 0.32) 67%,
+      transparent 67%
+    ),
+    linear-gradient(
+      to bottom,
+      transparent 33.33%,
+      rgba(255, 255, 255, 0.32) 33.33%,
+      rgba(255, 255, 255, 0.32) 33.7%,
+      transparent 33.7%,
+      transparent 66.66%,
+      rgba(255, 255, 255, 0.32) 66.66%,
+      rgba(255, 255, 255, 0.32) 67%,
+      transparent 67%
+    );
+}
+
+/* POIGNÉES */
+
+.crop-handle {
+  position: absolute;
+
+  z-index: 6;
+
+  width: 22px;
+  height: 22px;
+}
+
+/* Coins */
+
+.handle-nw {
+  left: -3px;
+  top: -3px;
+
+  border-left: 4px solid white;
+  border-top: 4px solid white;
+}
+
+.handle-ne {
+  right: -3px;
+  top: -3px;
+
+  border-right: 4px solid white;
+  border-top: 4px solid white;
+}
+
+.handle-sw {
+  left: -3px;
+  bottom: -3px;
+
+  border-left: 4px solid white;
+  border-bottom: 4px solid white;
+}
+
+.handle-se {
+  right: -3px;
+  bottom: -3px;
+
+  border-right: 4px solid white;
+  border-bottom: 4px solid white;
+}
+
+/* Milieux */
+
+.handle-n {
+  top: -11px;
+  left: 50%;
+
+  transform: translateX(-50%);
+
+  width: 48px;
+}
+
+.handle-n::after {
+  content: "";
+
+  position: absolute;
+
+  left: 8px;
+  right: 8px;
+  top: 9px;
+
+  height: 4px;
+
+  border-radius: 5px;
+
+  background: white;
+}
+
+.handle-s {
+  bottom: -11px;
+  left: 50%;
+
+  transform: translateX(-50%);
+
+  width: 48px;
+}
+
+.handle-s::after {
+  content: "";
+
+  position: absolute;
+
+  left: 8px;
+  right: 8px;
+  bottom: 9px;
+
+  height: 4px;
+
+  border-radius: 5px;
+
+  background: white;
+}
+
+.handle-w {
+  left: -11px;
+  top: 50%;
+
+  transform: translateY(-50%);
+
+  height: 48px;
+}
+
+.handle-w::after {
+  content: "";
+
+  position: absolute;
+
+  top: 8px;
+  bottom: 8px;
+  left: 9px;
+
+  width: 4px;
+
+  border-radius: 5px;
+
+  background: white;
+}
+
+.handle-e {
+  right: -11px;
+  top: 50%;
+
+  transform: translateY(-50%);
+
+  height: 48px;
+}
+
+.handle-e::after {
+  content: "";
+
+  position: absolute;
+
+  top: 8px;
+  bottom: 8px;
+  right: 9px;
+
+  width: 4px;
+
+  border-radius: 5px;
+
+  background: white;
+}
+
+/* PINCEAU OPTIONS */
+
+.brush-options {
+  display: none;
+
+  align-items: center;
+  gap: 10px;
+
+  padding: 8px 6px;
+
+  font-size: 11px;
+  color: #c6cdd2;
+}
+
+.brush-options input {
+  flex: 1;
+}
+
+/* BAS */
+
+.crop-bottom-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+
+  padding-top: 10px;
+}
+
+.crop-bottom-actions button {
+  border: none;
+
+  background: transparent;
+
+  color: #20c76a;
+
+  font-weight: 600;
+
+  padding: 8px;
+}

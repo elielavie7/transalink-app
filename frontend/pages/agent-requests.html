@@ -104,6 +104,28 @@
       let audioChunks = [];
       let agentAudioBlob = null;
       let audioStream = null;
+      let selectedReceiptFile = null;
+      let receiptImageDataUrl = "";
+      let receiptRotation = 0;
+      let cropCanvas = null;
+      let cropCtx = null;
+      let cropImage = null;
+
+      let brushCanvas = null;
+      let brushCtx = null;
+
+      let cropSelection = null;
+
+      let cropEditorMode = "crop";
+
+      let cropPointerStart = null;
+      let cropSelectionStart = null;
+      let activeCropHandle = null;
+
+      let isBrushing = false;
+      let lastBrushPoint = null;
+
+      let receiptEditorDataUrl = "";
 
       function formatMoney(amount) {
         return Number(amount || 0).toLocaleString("fr-FR") + " FC";
@@ -681,12 +703,47 @@
             <div id="sentErrorBox" class="compact-response error" style="display:none;"></div>
 
             <label>Capture transaction</label>
-            <input type="file" id="receiptImage" accept="image/*" onchange="previewReceiptImage(event)" />
 
-            <div class="receipt-preview" id="receiptPreview">
-              <span>📷 Aucune capture sélectionnée</span>
-            </div>
+<div class="receipt-source-actions">
+  <button
+    type="button"
+    class="small-btn primary-small-btn"
+    onclick="openReceiptCamera()"
+  >
+    📷 Caméra
+  </button>
 
+  <button
+    type="button"
+    class="small-btn primary-small-btn"
+    onclick="openReceiptGallery()"
+  >
+    🖼️ Galerie
+  </button>
+</div>
+
+<!-- Galerie -->
+<input
+  type="file"
+  id="receiptImage"
+  accept="image/*"
+  onchange="previewReceiptImage(event)"
+  style="display:none;"
+/>
+
+<!-- Caméra arrière -->
+<input
+  type="file"
+  id="receiptCamera"
+  accept="image/*"
+  capture="environment"
+  onchange="previewReceiptImage(event)"
+  style="display:none;"
+/>
+
+<div class="receipt-preview" id="receiptPreview">
+  <span>📷 Aucune capture sélectionnée</span>
+</div>
             ${audioRecorderHTML()}
 
             <div class="modal-actions">
@@ -723,7 +780,7 @@
         const final_client_name = document
           .getElementById("finalClientName")
           .value.trim();
-        const receipt = document.getElementById("receiptImage").files[0];
+        const receipt = selectedReceiptFile;
         const agencyId = localStorage.getItem("selected_agency_id");
 
         if (!receipt) {
@@ -829,27 +886,820 @@
         updateStatus(id, "rejected", { rejection_reason });
       }
 
+      function openReceiptCamera() {
+        document.getElementById("receiptCamera").click();
+      }
+
+      function openReceiptGallery() {
+        document.getElementById("receiptImage").click();
+      }
+
       function previewReceiptImage(event) {
         const file = event.target.files[0];
         const preview = document.getElementById("receiptPreview");
+        const label = document.getElementById("receiptFileLabel");
 
         if (!file) {
+          selectedReceiptFile = null;
+          receiptImageDataUrl = "";
+          receiptRotation = 0;
+
           preview.innerHTML = `<span>📷 Aucune capture sélectionnée</span>`;
+
+          if (label) {
+            label.textContent = "Ajouter une preuve";
+          }
+
           return;
         }
 
-        preview.innerHTML = `<span class="loader-small"></span><strong>Chargement de la capture...</strong>`;
+        selectedReceiptFile = file;
+        receiptRotation = 0;
+
+        if (label) {
+          label.textContent = "Preuve sélectionnée ✓";
+        }
+
+        preview.innerHTML = `
+    <span class="loader-small"></span>
+    <strong>Chargement de la capture...</strong>
+  `;
 
         const reader = new FileReader();
 
         reader.onload = () => {
-          preview.innerHTML = `
-          <img src="${reader.result}" alt="Capture transaction" />
-          <strong>Capture prête</strong>
-        `;
+          receiptImageDataUrl = reader.result;
+          renderReceiptPreview();
         };
 
         reader.readAsDataURL(file);
+      }
+
+      function renderReceiptPreview() {
+        const preview = document.getElementById("receiptPreview");
+
+        if (!receiptImageDataUrl) return;
+
+        preview.innerHTML = `
+    <img
+      src="${receiptImageDataUrl}"
+      alt="Capture transaction"
+      style="transform: rotate(${receiptRotation}deg);"
+    />
+
+   <div class="receipt-edit-actions">
+  <button type="button" onclick="rotateReceiptLeft()" title="Tourner à gauche">
+    ⟲
+  </button>
+
+  <button type="button" onclick="openReceiptCropper()" title="Recadrer">
+    ✂️
+  </button>
+
+  <button type="button" onclick="rotateReceiptRight()" title="Tourner à droite">
+    ⟳
+  </button>
+</div>
+    <strong>Capture prête ✓</strong>
+  `;
+      }
+
+      function rotateReceiptLeft() {
+        receiptRotation -= 90;
+        applyReceiptRotation();
+      }
+
+      function rotateReceiptRight() {
+        receiptRotation += 90;
+        applyReceiptRotation();
+      }
+
+      function applyReceiptRotation() {
+        const img = new Image();
+
+        img.onload = () => {
+          const normalizedRotation = ((receiptRotation % 360) + 360) % 360;
+
+          const canvas = document.createElement("canvas");
+          const ctx = canvas.getContext("2d");
+
+          const isSideways =
+            normalizedRotation === 90 || normalizedRotation === 270;
+
+          canvas.width = isSideways ? img.height : img.width;
+          canvas.height = isSideways ? img.width : img.height;
+
+          ctx.translate(canvas.width / 2, canvas.height / 2);
+          ctx.rotate((normalizedRotation * Math.PI) / 180);
+
+          ctx.drawImage(img, -img.width / 2, -img.height / 2);
+
+          canvas.toBlob(
+            (blob) => {
+              if (!blob) {
+                showSentError("Impossible de tourner l’image.");
+                return;
+              }
+
+              selectedReceiptFile = new File(
+                [blob],
+                `receipt-${Date.now()}.jpg`,
+                {
+                  type: "image/jpeg",
+                },
+              );
+
+              receiptImageDataUrl = canvas.toDataURL("image/jpeg", 0.92);
+
+              receiptRotation = 0;
+
+              renderReceiptPreview();
+            },
+            "image/jpeg",
+            0.92,
+          );
+        };
+
+        img.src = receiptImageDataUrl;
+      }
+
+      function openReceiptCropper() {
+        if (!receiptImageDataUrl) {
+          showSentError("Sélectionne d’abord une capture.");
+          return;
+        }
+        // On crée une copie de travail.
+        // L'image officielle ne sera modifiée qu'avec "Terminé".
+        if (!receiptEditorDataUrl) {
+          receiptEditorDataUrl = receiptImageDataUrl;
+        }
+
+        document.body.insertAdjacentHTML(
+          "beforeend",
+          `
+    <div class="crop-modal" id="receiptCropModal">
+
+      <div class="crop-box">
+
+        <div class="crop-editor-header">
+          <button
+            type="button"
+            class="crop-header-btn"
+            onclick="closeReceiptCropper()"
+          >
+            ✕
+          </button>
+
+          <strong>Modifier la preuve</strong>
+
+          <button
+            type="button"
+            class="crop-done-btn"
+            onclick="applyReceiptCrop()"
+          >
+            Terminé
+          </button>
+        </div>
+
+
+        <div class="crop-editor-toolbar">
+
+          <button
+            type="button"
+            id="cropToolBtn"
+            class="crop-tool active"
+            onclick="setCropEditorMode('crop')"
+          >
+            ✂️
+            <span>Rogner</span>
+          </button>
+
+          <button
+            type="button"
+            id="brushToolBtn"
+            class="crop-tool"
+            onclick="setCropEditorMode('brush')"
+          >
+            🖌️
+            <span>Masquer</span>
+          </button>
+
+          <button
+            type="button"
+            class="crop-tool"
+            onclick="rotateInsideCropper(-90)"
+          >
+            ⟲
+            <span>Gauche</span>
+          </button>
+
+          <button
+            type="button"
+            class="crop-tool"
+            onclick="rotateInsideCropper(90)"
+          >
+            ⟳
+            <span>Droite</span>
+          </button>
+
+        </div>
+
+
+        <p class="crop-help" id="cropHelp">
+          Fais glisser les bords ou les coins pour rogner l’image.
+        </p>
+
+
+        <div class="crop-stage-container">
+
+          <div class="crop-stage" id="cropStage">
+
+            <canvas id="receiptCropCanvas"></canvas>
+
+            <canvas id="receiptBrushCanvas"></canvas>
+
+
+            <div class="crop-selection-box" id="cropSelectionBox">
+
+              <div class="crop-grid"></div>
+
+              <span class="crop-handle handle-nw" data-handle="nw"></span>
+              <span class="crop-handle handle-n" data-handle="n"></span>
+              <span class="crop-handle handle-ne" data-handle="ne"></span>
+
+              <span class="crop-handle handle-e" data-handle="e"></span>
+
+              <span class="crop-handle handle-se" data-handle="se"></span>
+              <span class="crop-handle handle-s" data-handle="s"></span>
+              <span class="crop-handle handle-sw" data-handle="sw"></span>
+
+              <span class="crop-handle handle-w" data-handle="w"></span>
+
+            </div>
+
+          </div>
+
+        </div>
+
+
+        <div class="brush-options" id="brushOptions">
+
+          <span>Petit</span>
+
+          <input
+            type="range"
+            id="brushSize"
+            min="12"
+            max="55"
+            value="28"
+          />
+
+          <span>Grand</span>
+
+        </div>
+
+
+        <div class="crop-bottom-actions">
+
+          <button
+            type="button"
+            onclick="resetCropEditor()"
+          >
+            ↺ Réinitialiser
+          </button>
+
+          <button
+            type="button"
+            onclick="clearReceiptMask()"
+          >
+            🧽 Effacer masque
+          </button>
+
+        </div>
+
+      </div>
+    </div>
+    `,
+        );
+
+        cropCanvas = document.getElementById("receiptCropCanvas");
+        cropCtx = cropCanvas.getContext("2d");
+
+        brushCanvas = document.getElementById("receiptBrushCanvas");
+        brushCtx = brushCanvas.getContext("2d");
+
+        cropImage = new Image();
+
+        cropImage.onload = () => {
+          const maxSize = 1600;
+
+          let width = cropImage.naturalWidth;
+          let height = cropImage.naturalHeight;
+
+          if (width > maxSize || height > maxSize) {
+            const ratio = Math.min(maxSize / width, maxSize / height);
+
+            width = Math.round(width * ratio);
+            height = Math.round(height * ratio);
+          }
+
+          cropCanvas.width = width;
+          cropCanvas.height = height;
+
+          brushCanvas.width = width;
+          brushCanvas.height = height;
+
+          cropCtx.drawImage(cropImage, 0, 0, width, height);
+
+          requestAnimationFrame(() => {
+            const stage = document.getElementById("cropStage");
+
+            const stageWidth = stage.clientWidth;
+            const stageHeight = stage.clientHeight;
+
+            cropSelection = {
+              x: 3,
+              y: 3,
+              width: stageWidth - 6,
+              height: stageHeight - 6,
+            };
+
+            updateCropSelectionBox();
+
+            setupCropResizeEvents();
+            setupBrushEvents();
+
+            setCropEditorMode("crop");
+          });
+        };
+
+        cropImage.src = receiptEditorDataUrl;
+      }
+
+      function updateCropSelectionBox() {
+        const box = document.getElementById("cropSelectionBox");
+
+        if (!box || !cropSelection) return;
+
+        box.style.left = cropSelection.x + "px";
+
+        box.style.top = cropSelection.y + "px";
+
+        box.style.width = cropSelection.width + "px";
+
+        box.style.height = cropSelection.height + "px";
+      }
+
+      function setupCropResizeEvents() {
+        const box = document.getElementById("cropSelectionBox");
+
+        if (!box) return;
+
+        box.addEventListener("pointerdown", startCropResize);
+
+        box.addEventListener("pointermove", moveCropResize);
+
+        box.addEventListener("pointerup", endCropResize);
+
+        box.addEventListener("pointercancel", endCropResize);
+      }
+
+      function startCropResize(event) {
+        if (cropEditorMode !== "crop") return;
+
+        event.preventDefault();
+
+        const stage = document.getElementById("cropStage");
+
+        const stageRect = stage.getBoundingClientRect();
+
+        cropPointerStart = {
+          x: event.clientX - stageRect.left,
+          y: event.clientY - stageRect.top,
+        };
+
+        cropSelectionStart = {
+          ...cropSelection,
+        };
+
+        activeCropHandle = event.target.dataset.handle || "move";
+
+        event.currentTarget.setPointerCapture?.(event.pointerId);
+      }
+
+      function moveCropResize(event) {
+        if (!cropPointerStart || !cropSelectionStart) {
+          return;
+        }
+
+        event.preventDefault();
+
+        const stage = document.getElementById("cropStage");
+
+        const stageWidth = stage.clientWidth;
+
+        const stageHeight = stage.clientHeight;
+
+        const stageRect = stage.getBoundingClientRect();
+
+        const currentX = event.clientX - stageRect.left;
+
+        const currentY = event.clientY - stageRect.top;
+
+        const dx = currentX - cropPointerStart.x;
+
+        const dy = currentY - cropPointerStart.y;
+
+        const start = cropSelectionStart;
+
+        const minSize = 60;
+
+        let x = start.x;
+        let y = start.y;
+        let width = start.width;
+        let height = start.height;
+
+        // Déplacer tout le cadre
+        if (activeCropHandle === "move") {
+          x = Math.max(0, Math.min(start.x + dx, stageWidth - start.width));
+
+          y = Math.max(0, Math.min(start.y + dy, stageHeight - start.height));
+        }
+
+        // Bord droit
+        if (activeCropHandle.includes("e")) {
+          width = Math.max(
+            minSize,
+            Math.min(start.width + dx, stageWidth - start.x),
+          );
+        }
+
+        // Bord gauche
+        if (activeCropHandle.includes("w")) {
+          let newX = start.x + dx;
+
+          newX = Math.max(0, Math.min(newX, start.x + start.width - minSize));
+
+          width = start.width + (start.x - newX);
+
+          x = newX;
+        }
+
+        // Bas
+        if (activeCropHandle.includes("s")) {
+          height = Math.max(
+            minSize,
+            Math.min(start.height + dy, stageHeight - start.y),
+          );
+        }
+
+        // Haut
+        if (activeCropHandle.includes("n")) {
+          let newY = start.y + dy;
+
+          newY = Math.max(0, Math.min(newY, start.y + start.height - minSize));
+
+          height = start.height + (start.y - newY);
+
+          y = newY;
+        }
+
+        cropSelection = {
+          x,
+          y,
+          width,
+          height,
+        };
+
+        updateCropSelectionBox();
+      }
+
+      function endCropResize(event) {
+        cropPointerStart = null;
+        cropSelectionStart = null;
+        activeCropHandle = null;
+
+        event.currentTarget?.releasePointerCapture?.(event.pointerId);
+      }
+
+      function setCropEditorMode(mode) {
+        cropEditorMode = mode;
+
+        const cropBtn = document.getElementById("cropToolBtn");
+
+        const brushBtn = document.getElementById("brushToolBtn");
+
+        const cropBox = document.getElementById("cropSelectionBox");
+
+        const brush = document.getElementById("receiptBrushCanvas");
+
+        const options = document.getElementById("brushOptions");
+
+        const help = document.getElementById("cropHelp");
+
+        cropBtn?.classList.toggle("active", mode === "crop");
+
+        brushBtn?.classList.toggle("active", mode === "brush");
+
+        if (mode === "brush") {
+          cropBox.style.pointerEvents = "none";
+
+          brush.style.pointerEvents = "auto";
+
+          options.style.display = "flex";
+
+          help.textContent = "Passe ton doigt sur les informations à masquer.";
+        } else {
+          cropBox.style.pointerEvents = "auto";
+
+          brush.style.pointerEvents = "none";
+
+          options.style.display = "none";
+
+          help.textContent =
+            "Fais glisser les bords ou les coins pour rogner l’image.";
+        }
+      }
+
+      function setupBrushEvents() {
+        brushCanvas.style.touchAction = "none";
+
+        brushCanvas.addEventListener("pointerdown", startReceiptBrush);
+
+        brushCanvas.addEventListener("pointermove", moveReceiptBrush);
+
+        brushCanvas.addEventListener("pointerup", endReceiptBrush);
+
+        brushCanvas.addEventListener("pointercancel", endReceiptBrush);
+      }
+
+      function getBrushPoint(event) {
+        const rect = brushCanvas.getBoundingClientRect();
+
+        return {
+          x: (event.clientX - rect.left) * (brushCanvas.width / rect.width),
+
+          y: (event.clientY - rect.top) * (brushCanvas.height / rect.height),
+        };
+      }
+
+      function startReceiptBrush(event) {
+        if (cropEditorMode !== "brush") return;
+
+        event.preventDefault();
+
+        isBrushing = true;
+
+        lastBrushPoint = getBrushPoint(event);
+
+        brushCanvas.setPointerCapture?.(event.pointerId);
+      }
+
+      function moveReceiptBrush(event) {
+        if (!isBrushing || cropEditorMode !== "brush") {
+          return;
+        }
+
+        event.preventDefault();
+
+        const point = getBrushPoint(event);
+
+        const rect = brushCanvas.getBoundingClientRect();
+
+        const displayBrushSize = Number(
+          document.getElementById("brushSize")?.value || 28,
+        );
+
+        const scale = brushCanvas.width / rect.width;
+
+        brushCtx.strokeStyle = "#111111";
+
+        brushCtx.lineWidth = displayBrushSize * scale;
+
+        brushCtx.lineCap = "round";
+
+        brushCtx.lineJoin = "round";
+
+        brushCtx.beginPath();
+
+        brushCtx.moveTo(lastBrushPoint.x, lastBrushPoint.y);
+
+        brushCtx.lineTo(point.x, point.y);
+
+        brushCtx.stroke();
+
+        lastBrushPoint = point;
+      }
+
+      function endReceiptBrush(event) {
+        if (!isBrushing) return;
+
+        isBrushing = false;
+        lastBrushPoint = null;
+
+        brushCanvas.releasePointerCapture?.(event.pointerId);
+      }
+
+      function clearReceiptMask() {
+        if (!brushCtx || !brushCanvas) return;
+
+        brushCtx.clearRect(0, 0, brushCanvas.width, brushCanvas.height);
+      }
+
+      function resetCropEditor() {
+        const stage = document.getElementById("cropStage");
+
+        cropSelection = {
+          x: 3,
+          y: 3,
+          width: stage.clientWidth - 6,
+          height: stage.clientHeight - 6,
+        };
+
+        clearReceiptMask();
+
+        updateCropSelectionBox();
+
+        setCropEditorMode("crop");
+      }
+
+      function applyReceiptCrop() {
+        if (!cropSelection) return;
+
+        const stage = document.getElementById("cropStage");
+
+        const stageWidth = stage.clientWidth;
+
+        const stageHeight = stage.clientHeight;
+
+        const scaleX = cropCanvas.width / stageWidth;
+
+        const scaleY = cropCanvas.height / stageHeight;
+
+        const sourceX = Math.round(cropSelection.x * scaleX);
+
+        const sourceY = Math.round(cropSelection.y * scaleY);
+
+        const sourceWidth = Math.round(cropSelection.width * scaleX);
+
+        const sourceHeight = Math.round(cropSelection.height * scaleY);
+
+        const mergedCanvas = document.createElement("canvas");
+
+        const mergedCtx = mergedCanvas.getContext("2d");
+
+        mergedCanvas.width = cropCanvas.width;
+
+        mergedCanvas.height = cropCanvas.height;
+
+        // Image
+        mergedCtx.drawImage(cropCanvas, 0, 0);
+
+        // Masquage pinceau
+        mergedCtx.drawImage(brushCanvas, 0, 0);
+
+        const outputCanvas = document.createElement("canvas");
+
+        const outputCtx = outputCanvas.getContext("2d");
+
+        outputCanvas.width = sourceWidth;
+
+        outputCanvas.height = sourceHeight;
+
+        outputCtx.drawImage(
+          mergedCanvas,
+
+          sourceX,
+          sourceY,
+          sourceWidth,
+          sourceHeight,
+
+          0,
+          0,
+          sourceWidth,
+          sourceHeight,
+        );
+
+        outputCanvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              showSentError("Impossible de modifier la capture.");
+              return;
+            }
+
+            selectedReceiptFile = new File(
+              [blob],
+              `receipt-${Date.now()}.jpg`,
+              {
+                type: "image/jpeg",
+              },
+            );
+
+            receiptImageDataUrl = outputCanvas.toDataURL("image/jpeg", 0.92);
+
+            receiptRotation = 0;
+
+            // La modification est maintenant officiellement validée.
+            receiptEditorDataUrl = "";
+
+            destroyReceiptCropper();
+
+            renderReceiptPreview();
+          },
+
+          "image/jpeg",
+          0.92,
+        );
+      }
+
+      function destroyReceiptCropper() {
+        const modal = document.getElementById("receiptCropModal");
+
+        if (modal) {
+          modal.remove();
+        }
+
+        cropCanvas = null;
+        cropCtx = null;
+        cropImage = null;
+
+        brushCanvas = null;
+        brushCtx = null;
+
+        cropSelection = null;
+
+        cropPointerStart = null;
+        cropSelectionStart = null;
+        activeCropHandle = null;
+
+        isBrushing = false;
+        lastBrushPoint = null;
+      }
+
+      function closeReceiptCropper() {
+        const modal = document.getElementById("receiptCropModal");
+
+        if (modal) {
+          modal.remove();
+        }
+
+        // On abandonne complètement le brouillon.
+        receiptEditorDataUrl = "";
+
+        cropCanvas = null;
+        cropCtx = null;
+        cropImage = null;
+
+        brushCanvas = null;
+        brushCtx = null;
+
+        cropSelection = null;
+
+        cropPointerStart = null;
+        cropSelectionStart = null;
+        activeCropHandle = null;
+
+        isBrushing = false;
+        lastBrushPoint = null;
+        destroyReceiptCropper();
+      }
+      function rotateInsideCropper(degrees) {
+        const merged = document.createElement("canvas");
+
+        const mergedCtx = merged.getContext("2d");
+
+        merged.width = cropCanvas.width;
+
+        merged.height = cropCanvas.height;
+
+        mergedCtx.drawImage(cropCanvas, 0, 0);
+
+        mergedCtx.drawImage(brushCanvas, 0, 0);
+
+        const rotation = ((degrees % 360) + 360) % 360;
+
+        const output = document.createElement("canvas");
+
+        const ctx = output.getContext("2d");
+
+        output.width = merged.height;
+
+        output.height = merged.width;
+
+        ctx.translate(output.width / 2, output.height / 2);
+
+        ctx.rotate((degrees * Math.PI) / 180);
+
+        ctx.drawImage(merged, -merged.width / 2, -merged.height / 2);
+
+        // On tourne uniquement le brouillon.
+        // L'image officielle reste intacte.
+        receiptEditorDataUrl = output.toDataURL("image/jpeg", 0.92);
+
+        // On reconstruit l'éditeur sans annuler le brouillon.
+        destroyReceiptCropper();
+
+        openReceiptCropper();
       }
 
       function audioRecorderHTML() {
